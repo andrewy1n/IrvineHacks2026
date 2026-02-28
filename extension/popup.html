@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 420px;
+      max-height: 480px;
+      margin: 0;
+      padding: 12px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+    }
+    .header {
+      margin-bottom: 24px;
+    }
+    h2 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+    .subtext {
+      color: #666;
+      font-size: 11px;
+      margin: 0;
+    }
+    .toggle-section {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 24px 0;
+      margin: 16px 0;
+    }
+    .toggle-label {
+      font-size: 13px;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: #ddd;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-switch.on {
+      background: #1a73e8;
+    }
+    .toggle-switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.2s;
+    }
+    .toggle-switch.on::after {
+      transform: translateX(20px);
+    }
+    .cta-section {
+      margin-top: auto;
+      padding-top: 16px;
+    }
+    button.primary {
+      width: 100%;
+      padding: 10px 14px;
+      background: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.primary:hover {
+      background: #1557b0;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h2 id="popup-title"></h2>
+    <p class="subtext" id="popup-subtext">Manage your extension and turn study mode on or off.</p>
+  </header>
+  <div class="toggle-section">
+    <span class="toggle-label">Study mode</span>
+    <div class="toggle-switch" id="study-mode-toggle" role="switch" aria-checked="false" tabindex="0"></div>
+  </div>
+  <div class="cta-section">
+    <button type="button" class="primary" id="view-knowledge-map">View knowledge map</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

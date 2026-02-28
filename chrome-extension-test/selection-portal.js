@@ -1,7 +1,45 @@
 (function () {
+  const SIDEBAR_STORAGE_KEYS = {
+    open: "solveSyncSidebarOpen",
+    width: "solveSyncSidebarWidth",
+    enabled: "solveSyncEnabled",
+  };
+  const SIDEBAR_WIDTH_MIN = 320;
+  const SIDEBAR_WIDTH_MAX = 450;
+  const SIDEBAR_WIDTH_DEFAULT = 380;
+
   let fab = null;
   let overlayHost = null;
   let lastSelection = "";
+  let sidebarHost = null;
+  let sidebarState = {
+    open: false,
+    width: SIDEBAR_WIDTH_DEFAULT,
+    enabled: true,
+  };
+  let resizeStartX = 0;
+  let resizeStartWidth = 0;
+
+  function loadSidebarState(cb) {
+    chrome.storage.local.get(
+      [SIDEBAR_STORAGE_KEYS.open, SIDEBAR_STORAGE_KEYS.width, SIDEBAR_STORAGE_KEYS.enabled],
+      (data) => {
+        sidebarState.open = data[SIDEBAR_STORAGE_KEYS.open] === true;
+        const w = Number(data[SIDEBAR_STORAGE_KEYS.width]);
+        sidebarState.width = Number.isFinite(w) ? Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, w)) : SIDEBAR_WIDTH_DEFAULT;
+        sidebarState.enabled = data[SIDEBAR_STORAGE_KEYS.enabled] !== false;
+        if (typeof cb === "function") cb();
+      }
+    );
+  }
+
+  function saveSidebarState(updates) {
+    const toSet = {};
+    if (updates.open !== undefined) toSet[SIDEBAR_STORAGE_KEYS.open] = updates.open;
+    if (updates.width !== undefined) toSet[SIDEBAR_STORAGE_KEYS.width] = updates.width;
+    if (updates.enabled !== undefined) toSet[SIDEBAR_STORAGE_KEYS.enabled] = updates.enabled;
+    if (Object.keys(toSet).length) chrome.storage.local.set(toSet);
+  }
 
   function getSelectionText() {
     let doc = document;
@@ -62,6 +100,7 @@
   }
 
   function showFAB(clientX, clientY) {
+    if (!sidebarState.enabled) return;
     const text = getSelectionText();
     if (!text) {
       hideFAB();
@@ -92,7 +131,218 @@
     if (fab && fab.host) fab.host.style.display = "none";
   }
 
+  function createSidebar() {
+    if (sidebarHost) return sidebarHost;
+    const host = document.createElement("div");
+    host.id = "solve-sync-sidebar-host";
+    host.style.cssText = "position:fixed;inset:0;z-index:2147483644;pointer-events:none;";
+    const shadow = host.attachShadow({ mode: "closed" });
+
+    const style = document.createElement("style");
+    style.textContent = `
+      .sidebar-toggle-fab {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 2147483646;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+        background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+        color: white;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        pointer-events: auto;
+      }
+      .sidebar-toggle-fab:hover {
+        transform: scale(1.08);
+        box-shadow: 0 6px 20px rgba(13, 148, 136, 0.4);
+      }
+      .sidebar-toggle-fab:active { transform: scale(0.98); }
+      .sidebar-toggle-fab svg { width: 22px; height: 22px; }
+      .sidebar-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        background: #fff;
+        box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+        display: flex;
+        flex-direction: column;
+        pointer-events: auto;
+        box-sizing: border-box;
+      }
+      .sidebar-resize {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 6px;
+        cursor: col-resize;
+        z-index: 1;
+      }
+      .sidebar-resize:hover { background: rgba(13, 148, 136, 0.1); }
+      .sidebar-resize:active { background: rgba(13, 148, 136, 0.2); }
+      .sidebar-header {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .sidebar-title { font-size: 14px; font-weight: 600; color: #111; margin: 0; }
+      .sidebar-enabled-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .sidebar-enabled-label { font-size: 13px; color: #374151; font-weight: 500; }
+      .sidebar-toggle-switch {
+        width: 36px;
+        height: 20px;
+        border-radius: 999px;
+        border: none;
+        background: #e5e7eb;
+        cursor: pointer;
+        position: relative;
+        transition: background 0.2s ease;
+      }
+      .sidebar-toggle-switch.enabled { background: #0d9488; }
+      .sidebar-toggle-switch::after {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        top: 2px;
+        left: 2px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        transition: transform 0.2s ease;
+      }
+      .sidebar-toggle-switch.enabled::after { transform: translateX(16px); }
+      .sidebar-body { flex: 1; min-height: 0; overflow: auto; }
+    `;
+    shadow.appendChild(style);
+
+    const toggleFab = document.createElement("button");
+    toggleFab.className = "sidebar-toggle-fab";
+    toggleFab.setAttribute("aria-label", "Toggle sidebar");
+    toggleFab.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+
+    const panel = document.createElement("div");
+    panel.className = "sidebar-panel";
+    panel.style.width = sidebarState.width + "px";
+
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "sidebar-resize";
+    resizeHandle.setAttribute("aria-label", "Resize sidebar");
+
+    const header = document.createElement("div");
+    header.className = "sidebar-header";
+    const titleEl = document.createElement("h2");
+    titleEl.className = "sidebar-title";
+    titleEl.textContent = "Solve & Sync";
+    const enabledWrap = document.createElement("div");
+    enabledWrap.className = "sidebar-enabled-wrap";
+    const enabledLabel = document.createElement("span");
+    enabledLabel.className = "sidebar-enabled-label";
+    enabledLabel.textContent = "Enabled";
+    const enabledSwitch = document.createElement("button");
+    enabledSwitch.className = "sidebar-toggle-switch" + (sidebarState.enabled ? " enabled" : "");
+    enabledSwitch.setAttribute("role", "switch");
+    enabledSwitch.setAttribute("aria-checked", sidebarState.enabled);
+    enabledSwitch.setAttribute("aria-label", "Extension enabled");
+    enabledWrap.appendChild(enabledLabel);
+    enabledWrap.appendChild(enabledSwitch);
+    header.appendChild(titleEl);
+    header.appendChild(enabledWrap);
+
+    const body = document.createElement("div");
+    body.className = "sidebar-body";
+
+    panel.appendChild(resizeHandle);
+    panel.appendChild(header);
+    panel.appendChild(body);
+    shadow.appendChild(toggleFab);
+    shadow.appendChild(panel);
+
+    function setPanelOpen(open) {
+      sidebarState.open = open;
+      panel.style.display = open ? "flex" : "none";
+      toggleFab.innerHTML = open
+        ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"/></svg>`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+      saveSidebarState({ open });
+    }
+
+    function setPanelWidth(w) {
+      const clamped = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, w));
+      sidebarState.width = clamped;
+      panel.style.width = clamped + "px";
+      saveSidebarState({ width: clamped });
+    }
+
+    function setEnabled(enabled) {
+      sidebarState.enabled = enabled;
+      enabledSwitch.classList.toggle("enabled", enabled);
+      enabledSwitch.setAttribute("aria-checked", enabled);
+      saveSidebarState({ enabled });
+      if (!enabled) hideFAB();
+    }
+
+    toggleFab.onclick = () => setPanelOpen(!sidebarState.open);
+
+    enabledSwitch.onclick = () => setEnabled(!sidebarState.enabled);
+
+    resizeHandle.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      resizeStartX = e.clientX;
+      resizeStartWidth = sidebarState.width;
+      function onMove(e) {
+        const dx = resizeStartX - e.clientX;
+        setPanelWidth(resizeStartWidth + dx);
+      }
+      function onUp() {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    document.body.appendChild(host);
+    sidebarHost = { host, panel, setPanelOpen, setPanelWidth, setEnabled };
+    return sidebarHost;
+  }
+
+  function applySidebarState() {
+    if (!sidebarHost) return;
+    const { panel } = sidebarHost;
+    panel.style.width = sidebarState.width + "px";
+    panel.style.display = sidebarState.open ? "flex" : "none";
+    const toggleFab = sidebarHost.host.shadowRoot.querySelector(".sidebar-toggle-fab");
+    if (toggleFab) {
+      toggleFab.innerHTML = sidebarState.open
+        ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"/></svg>`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+    }
+    const enabledSwitch = sidebarHost.host.shadowRoot.querySelector(".sidebar-toggle-switch");
+    if (enabledSwitch) {
+      enabledSwitch.classList.toggle("enabled", sidebarState.enabled);
+      enabledSwitch.setAttribute("aria-checked", sidebarState.enabled);
+    }
+  }
+
   function openOverlay(questionText) {
+    if (!sidebarState.enabled) return;
     if (overlayHost) return;
     const host = document.createElement("div");
     host.id = "solve-sync-overlay-host";
@@ -399,4 +649,9 @@
     const inFab = fab && fab.host && (e.target === fab.host || fab.host.contains(e.target));
     if (!inFab && !overlayHost) hideFAB();
   }, true);
+
+  loadSidebarState(function () {
+    createSidebar();
+    applySidebarState();
+  });
 })();

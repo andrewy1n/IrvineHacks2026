@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Solve & Sync – Options</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 18px; margin-bottom: 8px; }
+    h2 { font-size: 14px; margin: 24px 0 8px; color: #374151; }
+    p { color: #666; font-size: 13px; margin-bottom: 12px; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; box-sizing: border-box; }
+    input:focus, select:focus { outline: none; border-color: #0d9488; }
+    button { margin-top: 12px; padding: 8px 16px; background: #0d9488; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    button:hover { background: #0f766e; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .saved { margin-top: 8px; font-size: 12px; color: #0f766e; }
+    .error { font-size: 12px; color: #b91c1c; margin-top: 4px; }
+    .backend-status { font-size: 12px; margin-top: 4px; }
+    #conceptsList { margin-top: 12px; max-height: 240px; overflow-y: auto; padding: 10px; background: #f3f4f6; border-radius: 8px; font-size: 12px; line-height: 1.5; }
+    #conceptsList:empty { display: none; }
+    #conceptsList .concept-item { padding: 2px 0; }
+  </style>
+</head>
+<body>
+  <h1>Solve & Sync – Options</h1>
+
+  <h2>Backend (Knowledge Graph)</h2>
+  <p>Log in to sync classifications and mastery with your course knowledge graph (kg-mastery API at localhost:8000).</p>
+  <label for="backendEmail">Email</label>
+  <input type="email" id="backendEmail" placeholder="your@email.com" autocomplete="email">
+  <label for="backendPassword">Password</label>
+  <input type="password" id="backendPassword" placeholder="Password" autocomplete="current-password">
+  <button id="backendLogin">Log in</button>
+  <div id="backendStatus" class="backend-status" hidden></div>
+  <div id="backendError" class="error" hidden></div>
+
+  <label for="courseSelect" style="margin-top: 16px;">Active course (for classification labels)</label>
+  <select id="courseSelect">
+    <option value="">— Select a course —</option>
+  </select>
+  <button id="refreshCourses">Refresh courses</button>
+  <button id="refreshKg">Refresh knowledge graph</button>
+  <div id="conceptsList" class="backend-status"></div>
+
+  <h2>Gemini API</h2>
+  <p>Get a free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>. It is stored locally and only used to evaluate your answers with Gemini.</p>
+  <label for="apiKey">Gemini API key</label>
+  <input type="password" id="apiKey" placeholder="Paste your API key here" autocomplete="off">
+  <button id="save">Save</button>
+  <div id="saved" class="saved" hidden>Saved.</div>
+  <script src="options.js"></script>
+</body>
+</html>
