@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
+import { Comfortaa } from "next/font/google";
 import "./globals.css";
+
+const comfortaa = Comfortaa({
+  subsets: ["latin"],
+  variable: "--font-comfortaa",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Nebula — Knowledge Graph Mastery",
@@ -13,7 +20,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className={`antialiased ${comfortaa.variable}`}>
         {children}
       </body>
     </html>

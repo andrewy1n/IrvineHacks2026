@@ -1,0 +1,3 @@
+module.exports=[97210,a=>{a.v({className:"comfortaa_2f595338-module__8kOP8a__className",variable:"comfortaa_2f595338-module__8kOP8a__variable"})},27572,a=>{"use strict";var b=a.i(7997),c=a.i(97210);let d={className:c.default.className,style:{fontFamily:"'Comfortaa', 'Comfortaa Fallback'",fontStyle:"normal"}};function e({children:a}){return(0,b.jsx)("html",{lang:"en",children:(0,b.jsx)("body",{className:`antialiased ${d.variable}`,children:a})})}null!=c.default.variable&&(d.variable=c.default.variable),a.s(["default",()=>e,"metadata",0,{title:"Nebula — Knowledge Graph Mastery",description:"Map your study sessions into a dynamic, visual knowledge graph"}],27572)}];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__5c7030da._.js.map

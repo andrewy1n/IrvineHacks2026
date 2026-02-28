@@ -1,6 +1,19 @@
 {
-  "app": {},
-  "appUsingSizeAdjust": false,
+  "app": {
+    "[project]/src/app/courses/[id]/page": [
+      "static/media/7f20430e44eb7422-s.p.bd5bbcc6.woff2"
+    ],
+    "[project]/src/app/courses/page": [
+      "static/media/7f20430e44eb7422-s.p.bd5bbcc6.woff2"
+    ],
+    "[project]/src/app/login/page": [
+      "static/media/7f20430e44eb7422-s.p.bd5bbcc6.woff2"
+    ],
+    "[project]/src/app/page": [
+      "static/media/7f20430e44eb7422-s.p.bd5bbcc6.woff2"
+    ]
+  },
+  "appUsingSizeAdjust": true,
   "pages": {},
   "pagesUsingSizeAdjust": false
 }

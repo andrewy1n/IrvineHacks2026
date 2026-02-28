@@ -325,21 +325,25 @@ const ForceGraph2D = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_mo
     ssr: false
 });
 // Canvas drawing helpers
-const GOLD = "#C5AE79";
-const CYAN = "#00ffff";
-const RED = "#ff0055";
-const GREY = "rgba(255,255,255,0.25)";
+// Neon Neural Network Palette
+const GREY = "#64748b";
+const ORANGE = "#fb923c"; // Developing (< 0.4)
+const YELLOW = "#facc15"; // Building (< 0.7)
+const LIME = "#a3e635"; // On Track (< 0.9)
+const GREEN = "#4ade80"; // Mastered (>= 0.9)
 function getNodeColor(confidence) {
     if (confidence === 0) return GREY;
-    if (confidence < 0.4) return RED;
-    if (confidence < 0.7) return GOLD;
-    return CYAN;
+    if (confidence < 0.4) return ORANGE;
+    if (confidence < 0.7) return YELLOW;
+    if (confidence < 0.9) return LIME;
+    return GREEN;
 }
 function getNodeGlowRadius(confidence) {
     if (confidence === 0) return 0;
-    if (confidence < 0.4) return 20;
-    if (confidence < 0.7) return 14;
-    return 25;
+    if (confidence < 0.4) return 15;
+    if (confidence < 0.7) return 18;
+    if (confidence < 0.9) return 22;
+    return 26;
 }
 // Dynamic node radius: ensures the circle is at least large enough to fit the longest word
 const FONT_WIDTH_ESTIMATE = 6.5; // approx px per char at ~11px bold font
@@ -382,6 +386,21 @@ function CourseGraphPage() {
         }, 50);
         return ()=>clearInterval(interval);
     }, []);
+    // Configure d3 layout to be spread out and easy to read
+    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useEffect"])(()=>{
+        const hasGraphData = (displayGraph?.nodes?.length ?? 0) > 0;
+        if (graphRef.current && hasGraphData) {
+            // Strong repulsion so nodes stay well separated
+            graphRef.current.d3Force('charge').strength(-800).distanceMax(1200);
+            const linkForce = graphRef.current.d3Force('link');
+            if (linkForce) {
+                linkForce.distance(200);
+            }
+        }
+    }, [
+        graphData?.nodes?.length,
+        graphRef
+    ]);
     // PDF Upload
     const handleUpload = async (e)=>{
         const file = e.target.files?.[0];
@@ -423,59 +442,85 @@ function CourseGraphPage() {
         const glowRadius = getNodeGlowRadius(confidence);
         const label = node.label || "";
         const isSelected = selectedNode?.id === node.id;
+        const drawerIsOpen = drawerOpen === true;
+        const isInDrawer = drawerIsOpen && selectedNode?.id === node.id;
         const baseRadius = getNodeRadius(label, confidence);
-        // Pulsing for Exposed (gold) and Gap (red) nodes
+        // Subtle pulsing for nodes in progress
         let pulse = 1;
-        if (confidence >= 0.4 && confidence < 0.7) {
-            pulse = 1 + 0.06 * Math.sin(pulsePhase);
-        } else if (confidence > 0 && confidence < 0.4) {
-            pulse = 1 + 0.04 * Math.sin(pulsePhase * 1.5);
+        if (confidence > 0 && confidence < 0.9) {
+            // Different offset per node so they don't pulse the exact same way
+            const offsetPhase = pulsePhase + (node.id || "").length % 10;
+            pulse = 1 + 0.04 * Math.sin(offsetPhase);
         }
         const radius = baseRadius * pulse;
+        ctx.save();
+        ctx.translate(node.x, node.y);
         // Outer glow layer
         if (glowRadius > 0) {
             ctx.save();
             ctx.shadowColor = color;
-            ctx.shadowBlur = glowRadius * (isSelected ? 2.5 : 1);
+            ctx.shadowBlur = glowRadius * (isSelected ? 2 : 1);
             ctx.beginPath();
-            ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
             ctx.fillStyle = color;
             ctx.fill();
             ctx.restore();
         }
-        // Node circle
+        // Node Background / Fill
         ctx.beginPath();
-        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
         if (confidence === 0) {
-            // Unseen: outlined grey with subtle fill
-            ctx.strokeStyle = "rgba(255,255,255,0.3)";
+            // Unseen: subtle translucent darker grey
+            ctx.fillStyle = "rgba(148, 163, 184, 0.15)";
+            ctx.fill();
+            ctx.strokeStyle = color;
             ctx.lineWidth = 1.5;
             ctx.stroke();
-            ctx.fillStyle = "rgba(10, 10, 10, 0.8)";
-            ctx.fill();
         } else {
-            // Darker fill with colored border for readability
-            ctx.fillStyle = "rgba(10, 10, 10, 0.75)";
+            // Radial gradient fill to fake 3D volume
+            let r = 0, g = 0, b = 0;
+            if (color.startsWith("#")) {
+                r = parseInt(color.slice(1, 3), 16);
+                g = parseInt(color.slice(3, 5), 16);
+                b = parseInt(color.slice(5, 7), 16);
+            }
+            const grad = ctx.createRadialGradient(0, -radius * 0.2, 0, 0, 0, radius);
+            grad.addColorStop(0, `rgba(${r},${g},${b},0.3)`);
+            grad.addColorStop(1, `rgba(${r},${g},${b},0.1)`);
+            ctx.fillStyle = grad;
             ctx.fill();
             ctx.strokeStyle = color;
             ctx.lineWidth = 2.5;
             ctx.stroke();
         }
+        // Glossy top highlight (Glassmorphism 3D effect)
+        ctx.beginPath();
+        ctx.ellipse(0, -radius * 0.4, radius * 0.6, radius * 0.25, 0, 0, Math.PI * 2);
+        const glossGrad = ctx.createLinearGradient(0, -radius * 0.65, 0, -radius * 0.15);
+        glossGrad.addColorStop(0, "rgba(255,255,255,0.6)");
+        glossGrad.addColorStop(1, "rgba(255,255,255,0.0)");
+        ctx.fillStyle = glossGrad;
+        ctx.fill();
         // Selected ring
         if (isSelected) {
             ctx.beginPath();
-            ctx.arc(node.x, node.y, radius + 4, 0, Math.PI * 2);
-            ctx.strokeStyle = "#ffffff";
+            ctx.arc(0, 0, radius + 6, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(255,255,255,0.8)";
             ctx.lineWidth = 2;
+            if (isInDrawer) ctx.setLineDash([
+                4,
+                4
+            ]);
             ctx.stroke();
+            ctx.setLineDash([]); // reset
         }
-        // Label INSIDE the circle — word wrap if needed
-        const fontSize = Math.max(11 / globalScale, 4);
-        ctx.font = `700 ${fontSize}px Inter, system-ui, sans-serif`;
+        // Label text (word-wrapped inside circle)
+        const fontSize = Math.max(12 / globalScale, 5);
+        // Use Comfortaa variable or fallback to system sans
+        ctx.font = `800 ${fontSize}px var(--font-comfortaa), system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillStyle = confidence === 0 ? "rgba(255,255,255,0.5)" : isSelected ? "#ffffff" : color;
-        // Simple word wrap for labels that are wider than the circle
+        ctx.fillStyle = confidence === 0 ? "rgba(255,255,255,0.6)" : isSelected ? "#ffffff" : "#f1f5f9"; // Slate 100 for better contrast
         const maxWidth = radius * 1.7;
         const words = label.split(/\s+/);
         const lines = [];
@@ -490,14 +535,16 @@ function CourseGraphPage() {
             }
         }
         lines.push(currentLine);
-        const lineHeight = fontSize * 1.25;
-        const startY = node.y - (lines.length - 1) * lineHeight / 2;
+        const lineHeight = fontSize * 1.3;
+        const startY = -((lines.length - 1) * lineHeight) / 2;
         for(let i = 0; i < lines.length; i++){
-            ctx.fillText(lines[i], node.x, startY + i * lineHeight);
+            ctx.fillText(lines[i], 0, startY + i * lineHeight);
         }
+        ctx.restore();
     }, [
         selectedNode,
-        pulsePhase
+        pulsePhase,
+        drawerOpen
     ]);
     // Pointer area for click detection (matches visual size)
     const nodePointerAreaPaint = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useCallback"])((node, color, ctx)=>{
@@ -509,20 +556,82 @@ function CourseGraphPage() {
         ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
         ctx.fill();
     }, []);
-    // Custom link rendering
+    // Custom link rendering with directional arrows
     const linkCanvasObject = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useCallback"])((link, ctx)=>{
         const source = link.source;
         const target = link.target;
         if (!source || !target || typeof source === "string" || typeof target === "string") return;
+        const targetRadius = getNodeRadius(target.label || "", target.confidence ?? 0);
+        const sourceRadius = getNodeRadius(source.label || "", source.confidence ?? 0);
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) return;
+        const unitX = dx / dist;
+        const unitY = dy / dist;
+        // Stop at node boundaries
+        const startX = source.x + unitX * sourceRadius;
+        const startY = source.y + unitY * sourceRadius;
+        // Arrow offset
+        const ARROW_LEN = 8;
+        const endX = target.x - unitX * (targetRadius + ARROW_LEN / 2);
+        const endY = target.y - unitY * (targetRadius + ARROW_LEN / 2);
+        // Is moving towards a selected node? Make that edge glow
+        const isPath = selectedNode && (source.id === selectedNode.id || target.id === selectedNode.id);
         ctx.beginPath();
-        ctx.moveTo(source.x, source.y);
-        ctx.lineTo(target.x, target.y);
-        ctx.strokeStyle = "rgba(197, 174, 121, 0.15)";
-        ctx.lineWidth = 0.8;
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.strokeStyle = isPath ? "rgba(59, 130, 246, 0.8)" : "rgba(100, 116, 139, 0.4)";
+        ctx.lineWidth = isPath ? 2 : 1;
         ctx.stroke();
-    }, []);
+        // Arrowhead at the target side
+        ctx.save();
+        ctx.translate(endX, endY);
+        // rotate towards target
+        ctx.rotate(Math.atan2(dy, dx));
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-ARROW_LEN, ARROW_LEN / 1.5);
+        ctx.lineTo(-ARROW_LEN * 0.7, 0);
+        ctx.lineTo(-ARROW_LEN, -ARROW_LEN / 1.5);
+        ctx.closePath();
+        ctx.fillStyle = isPath ? "#3b82f6" : "#64748b";
+        ctx.fill();
+        ctx.restore();
+    }, [
+        selectedNode
+    ]);
     const status = selectedNode ? (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$utils$2e$ts__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["getStatusFromConfidence"])(selectedNode.confidence) : null;
-    const hasGraph = graphData && graphData.nodes.length > 0;
+    // Show only the 10 most important (most-connected) topics
+    const MAX_DISPLAY_NODES = 10;
+    const displayGraph = (()=>{
+        if (!graphData || graphData.nodes.length === 0) return null;
+        if (graphData.nodes.length <= MAX_DISPLAY_NODES) return graphData;
+        const linkCount = new Map();
+        graphData.nodes.forEach((n)=>linkCount.set(n.id, 0));
+        graphData.links.forEach((link)=>{
+            const s = typeof link.source === "string" ? link.source : link.source.id;
+            const t = typeof link.target === "string" ? link.target : link.target.id;
+            linkCount.set(s, (linkCount.get(s) ?? 0) + 1);
+            linkCount.set(t, (linkCount.get(t) ?? 0) + 1);
+        });
+        const sorted = [
+            ...graphData.nodes
+        ].sort((a, b)=>(linkCount.get(b.id) ?? 0) - (linkCount.get(a.id) ?? 0));
+        const kept = new Set(sorted.slice(0, MAX_DISPLAY_NODES).map((n)=>n.id));
+        const nodes = graphData.nodes.filter((n)=>kept.has(n.id));
+        const links = graphData.links.filter((link)=>{
+            const s = typeof link.source === "string" ? link.source : link.source.id;
+            const t = typeof link.target === "string" ? link.target : link.target.id;
+            return kept.has(s) && kept.has(t);
+        });
+        return {
+            ...graphData,
+            nodes,
+            links
+        };
+    })();
+    const hasGraph = displayGraph && displayGraph.nodes.length > 0;
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "h-screen w-screen flex flex-col bg-[#0a0a0a] overflow-hidden",
         children: [
@@ -536,12 +645,12 @@ function CourseGraphPage() {
                             className: "w-4 h-4"
                         }, void 0, false, {
                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                            lineNumber: 286,
+                            lineNumber: 400,
                             columnNumber: 21
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 282,
+                        lineNumber: 396,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -552,7 +661,7 @@ function CourseGraphPage() {
                                 children: "NEBULA"
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 289,
+                                lineNumber: 403,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -560,7 +669,7 @@ function CourseGraphPage() {
                                 children: "|"
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 292,
+                                lineNumber: 406,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -568,13 +677,13 @@ function CourseGraphPage() {
                                 children: graphData?.course?.name || "Loading..."
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 293,
+                                lineNumber: 407,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 288,
+                        lineNumber: 402,
                         columnNumber: 17
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -588,7 +697,7 @@ function CourseGraphPage() {
                                 onChange: handleUpload
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 299,
+                                lineNumber: 413,
                                 columnNumber: 21
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -600,32 +709,32 @@ function CourseGraphPage() {
                                         className: "w-3.5 h-3.5 animate-spin"
                                     }, void 0, false, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 312,
+                                        lineNumber: 426,
                                         columnNumber: 29
                                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$upload$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__Upload$3e$__["Upload"], {
                                         className: "w-3.5 h-3.5"
                                     }, void 0, false, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 314,
+                                        lineNumber: 428,
                                         columnNumber: 29
                                     }, this),
                                     uploading ? "Analyzing..." : "Upload PDF"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 306,
+                                lineNumber: 420,
                                 columnNumber: 21
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 298,
+                        lineNumber: 412,
                         columnNumber: 17
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                lineNumber: 281,
+                lineNumber: 395,
                 columnNumber: 13
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -637,12 +746,12 @@ function CourseGraphPage() {
                             className: "w-6 h-6 animate-spin text-[#C5AE79]"
                         }, void 0, false, {
                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                            lineNumber: 325,
+                            lineNumber: 439,
                             columnNumber: 25
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 324,
+                        lineNumber: 438,
                         columnNumber: 21
                     }, this) : !hasGraph ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                         className: "h-full flex flex-col items-center justify-center text-center p-6",
@@ -653,12 +762,12 @@ function CourseGraphPage() {
                                     className: "w-8 h-8 text-[#C5AE79]/50"
                                 }, void 0, false, {
                                     fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                    lineNumber: 330,
+                                    lineNumber: 444,
                                     columnNumber: 29
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 329,
+                                lineNumber: 443,
                                 columnNumber: 25
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h2", {
@@ -666,7 +775,7 @@ function CourseGraphPage() {
                                 children: "Upload Course Material"
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 332,
+                                lineNumber: 446,
                                 columnNumber: 25
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -674,7 +783,7 @@ function CourseGraphPage() {
                                 children: "Upload a PDF (syllabus, slides, or textbook) to generate your knowledge graph."
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 335,
+                                lineNumber: 449,
                                 columnNumber: 25
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -684,19 +793,19 @@ function CourseGraphPage() {
                                 children: uploading ? "Analyzing..." : "Select PDF"
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 338,
+                                lineNumber: 452,
                                 columnNumber: 25
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 328,
+                        lineNumber: 442,
                         columnNumber: 21
                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(ForceGraph2D, {
                         ref: graphRef,
                         graphData: {
-                            nodes: graphData.nodes,
-                            links: graphData.links
+                            nodes: displayGraph.nodes,
+                            links: displayGraph.links
                         },
                         nodeCanvasObject: nodeCanvasObject,
                         nodePointerAreaPaint: nodePointerAreaPaint,
@@ -704,9 +813,12 @@ function CourseGraphPage() {
                         onNodeClick: handleNodeClick,
                         backgroundColor: "#0a0a0a",
                         nodeRelSize: 28,
-                        linkWidth: 0.8,
-                        linkColor: ()=>"rgba(197, 174, 121, 0.15)",
-                        cooldownTicks: 100,
+                        linkWidth: 0,
+                        linkColor: ()=>"transparent",
+                        dagMode: "lr",
+                        dagLevelDistance: 220,
+                        warmupTicks: 300,
+                        cooldownTicks: 0,
                         d3AlphaDecay: 0.02,
                         d3VelocityDecay: 0.3,
                         enableNodeDrag: true,
@@ -714,117 +826,217 @@ function CourseGraphPage() {
                         enablePanInteraction: true
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 347,
+                        lineNumber: 461,
                         columnNumber: 21
                     }, this),
                     hasGraph && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                        className: "absolute bottom-4 left-4 p-3 rounded-xl bg-[#111]/90 border border-[#C5AE79]/15 backdrop-blur-md z-40",
+                        className: "absolute bottom-6 left-6 p-4 rounded-xl bg-[#0f0f12]/80 border border-[#1e1e24] shadow-2xl backdrop-blur-md z-10 pointer-events-auto transition-opacity",
                         children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                            className: "flex flex-col gap-2 text-[10px] text-[#C5AE79]/70 font-medium",
+                            className: "flex flex-col gap-3 text-xs text-gray-400 font-medium",
                             children: [
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    className: "flex items-center gap-2",
+                                    className: "flex items-center gap-3",
                                     children: [
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "w-2 h-2 rounded-full border border-white/30"
-                                        }, void 0, false, {
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("svg", {
+                                            width: "32",
+                                            height: "6",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("line", {
+                                                    x1: "0",
+                                                    y1: "3",
+                                                    x2: "26",
+                                                    y2: "3",
+                                                    stroke: "#64748b",
+                                                    strokeWidth: "1.5"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 492,
+                                                    columnNumber: 60
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("polygon", {
+                                                    points: "26,0 32,3 26,6",
+                                                    fill: "#64748b"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 492,
+                                                    columnNumber: 132
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
                                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 375,
+                                            lineNumber: 492,
                                             columnNumber: 33
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                            children: "Unseen"
+                                            children: "Prerequisite"
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 376,
+                                            lineNumber: 493,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                    lineNumber: 374,
+                                    lineNumber: 491,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    className: "flex items-center gap-2",
-                                    children: [
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "w-2 h-2 rounded-full bg-[#ff0055] shadow-[0_0_6px_#ff0055]"
-                                        }, void 0, false, {
-                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 379,
-                                            columnNumber: 33
-                                        }, this),
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                            className: "text-[#ff0055]",
-                                            children: "Struggling"
-                                        }, void 0, false, {
-                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 380,
-                                            columnNumber: 33
-                                        }, this)
-                                    ]
-                                }, void 0, true, {
+                                    className: "h-px bg-gray-800 my-1"
+                                }, void 0, false, {
                                     fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                    lineNumber: 378,
+                                    lineNumber: 495,
                                     columnNumber: 29
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    className: "flex items-center gap-2",
+                                    className: "grid grid-cols-2 gap-x-6 gap-y-3",
                                     children: [
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "w-2 h-2 rounded-full bg-[#C5AE79] shadow-[0_0_6px_#C5AE79]"
-                                        }, void 0, false, {
+                                            className: "flex items-center gap-2",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: "w-2.5 h-2.5 rounded-full shadow-[0_0_8px_#4ade80]",
+                                                    style: {
+                                                        background: "#4ade80"
+                                                    }
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 498,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "text-gray-300",
+                                                    children: "Mastered"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 499,
+                                                    columnNumber: 37
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
                                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 383,
+                                            lineNumber: 497,
                                             columnNumber: 33
                                         }, this),
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                            children: "Exposed"
-                                        }, void 0, false, {
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "flex items-center gap-2",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: "w-2.5 h-2.5 rounded-full shadow-[0_0_8px_#a3e635]",
+                                                    style: {
+                                                        background: "#a3e635"
+                                                    }
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 502,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "text-gray-300",
+                                                    children: "On Track"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 503,
+                                                    columnNumber: 37
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
                                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 384,
+                                            lineNumber: 501,
+                                            columnNumber: 33
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "flex items-center gap-2",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: "w-2.5 h-2.5 rounded-full shadow-[0_0_8px_#facc15]",
+                                                    style: {
+                                                        background: "#facc15"
+                                                    }
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 506,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "text-gray-300",
+                                                    children: "Building"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 507,
+                                                    columnNumber: 37
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                            lineNumber: 505,
+                                            columnNumber: 33
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "flex items-center gap-2",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: "w-2.5 h-2.5 rounded-full shadow-[0_0_8px_#fb923c]",
+                                                    style: {
+                                                        background: "#fb923c"
+                                                    }
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 510,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "text-gray-300",
+                                                    children: "Developing"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 511,
+                                                    columnNumber: 37
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                            lineNumber: 509,
+                                            columnNumber: 33
+                                        }, this),
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                            className: "flex items-center gap-2 col-span-2",
+                                            children: [
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                                    className: "w-2.5 h-2.5 rounded-full border border-gray-500 bg-gray-500/20"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 514,
+                                                    columnNumber: 37
+                                                }, this),
+                                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                                    className: "text-gray-400",
+                                                    children: "Not Started"
+                                                }, void 0, false, {
+                                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                                    lineNumber: 515,
+                                                    columnNumber: 37
+                                                }, this)
+                                            ]
+                                        }, void 0, true, {
+                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
+                                            lineNumber: 513,
                                             columnNumber: 33
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                    lineNumber: 382,
-                                    columnNumber: 29
-                                }, this),
-                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                    className: "flex items-center gap-2",
-                                    children: [
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
-                                            className: "w-2 h-2 rounded-full bg-[#00ffff] shadow-[0_0_6px_#00ffff]"
-                                        }, void 0, false, {
-                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 387,
-                                            columnNumber: 33
-                                        }, this),
-                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
-                                            className: "text-[#00ffff]",
-                                            children: "Mastered"
-                                        }, void 0, false, {
-                                            fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 388,
-                                            columnNumber: 33
-                                        }, this)
-                                    ]
-                                }, void 0, true, {
-                                    fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                    lineNumber: 386,
+                                    lineNumber: 496,
                                     columnNumber: 29
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                            lineNumber: 373,
+                            lineNumber: 490,
                             columnNumber: 25
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 372,
+                        lineNumber: 489,
                         columnNumber: 21
                     }, this),
                     drawerOpen && selectedNode && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -844,7 +1056,7 @@ function CourseGraphPage() {
                                                         children: status?.emoji
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 401,
+                                                        lineNumber: 529,
                                                         columnNumber: 37
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -855,13 +1067,13 @@ function CourseGraphPage() {
                                                         children: status?.label
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 402,
+                                                        lineNumber: 530,
                                                         columnNumber: 37
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 400,
+                                                lineNumber: 528,
                                                 columnNumber: 33
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
@@ -869,7 +1081,7 @@ function CourseGraphPage() {
                                                 children: selectedNode.label
                                             }, void 0, false, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 409,
+                                                lineNumber: 537,
                                                 columnNumber: 33
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -877,13 +1089,13 @@ function CourseGraphPage() {
                                                 children: selectedNode.concept_type
                                             }, void 0, false, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 412,
+                                                lineNumber: 540,
                                                 columnNumber: 33
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 399,
+                                        lineNumber: 527,
                                         columnNumber: 29
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -893,18 +1105,18 @@ function CourseGraphPage() {
                                             className: "w-4 h-4"
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                            lineNumber: 420,
+                                            lineNumber: 548,
                                             columnNumber: 33
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 416,
+                                        lineNumber: 544,
                                         columnNumber: 29
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 398,
+                                lineNumber: 526,
                                 columnNumber: 25
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -915,7 +1127,7 @@ function CourseGraphPage() {
                                         children: selectedNode.description
                                     }, void 0, false, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 427,
+                                        lineNumber: 555,
                                         columnNumber: 29
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -928,7 +1140,7 @@ function CourseGraphPage() {
                                                         children: "Confidence"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 434,
+                                                        lineNumber: 562,
                                                         columnNumber: 37
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -939,13 +1151,13 @@ function CourseGraphPage() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 435,
+                                                        lineNumber: 563,
                                                         columnNumber: 37
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 433,
+                                                lineNumber: 561,
                                                 columnNumber: 33
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -959,18 +1171,18 @@ function CourseGraphPage() {
                                                     }
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                    lineNumber: 440,
+                                                    lineNumber: 568,
                                                     columnNumber: 37
                                                 }, this)
                                             }, void 0, false, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 439,
+                                                lineNumber: 567,
                                                 columnNumber: 33
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 432,
+                                        lineNumber: 560,
                                         columnNumber: 29
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -980,7 +1192,7 @@ function CourseGraphPage() {
                                                 children: "Recommended Resources"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 453,
+                                                lineNumber: 581,
                                                 columnNumber: 33
                                             }, this),
                                             resourcesLoading ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -990,14 +1202,14 @@ function CourseGraphPage() {
                                                         className: "w-3 h-3 animate-spin"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 458,
+                                                        lineNumber: 586,
                                                         columnNumber: 41
                                                     }, this),
                                                     "Loading resources..."
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 457,
+                                                lineNumber: 585,
                                                 columnNumber: 37
                                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                                 className: "space-y-1.5",
@@ -1011,13 +1223,13 @@ function CourseGraphPage() {
                                                                 className: "w-3.5 h-3.5 text-[#C5AE79]/50 mt-0.5 shrink-0 group-hover:text-[#00ffff]"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                                lineNumber: 472,
+                                                                lineNumber: 600,
                                                                 columnNumber: 53
                                                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$file$2d$text$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__FileText$3e$__["FileText"], {
                                                                 className: "w-3.5 h-3.5 text-[#C5AE79]/50 mt-0.5 shrink-0 group-hover:text-[#00ffff]"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                                lineNumber: 474,
+                                                                lineNumber: 602,
                                                                 columnNumber: 53
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1028,7 +1240,7 @@ function CourseGraphPage() {
                                                                         children: r.title
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                                        lineNumber: 477,
+                                                                        lineNumber: 605,
                                                                         columnNumber: 53
                                                                     }, this),
                                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1036,37 +1248,37 @@ function CourseGraphPage() {
                                                                         children: r.why
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                                        lineNumber: 480,
+                                                                        lineNumber: 608,
                                                                         columnNumber: 53
                                                                     }, this)
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                                lineNumber: 476,
+                                                                lineNumber: 604,
                                                                 columnNumber: 49
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$external$2d$link$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__$3c$export__default__as__ExternalLink$3e$__["ExternalLink"], {
                                                                 className: "w-3 h-3 text-[#C5AE79]/20 shrink-0 group-hover:text-[#00ffff]"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                                lineNumber: 484,
+                                                                lineNumber: 612,
                                                                 columnNumber: 49
                                                             }, this)
                                                         ]
                                                     }, i, true, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 464,
+                                                        lineNumber: 592,
                                                         columnNumber: 45
                                                     }, this))
                                             }, void 0, false, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 462,
+                                                lineNumber: 590,
                                                 columnNumber: 37
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 452,
+                                        lineNumber: 580,
                                         columnNumber: 29
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1076,7 +1288,7 @@ function CourseGraphPage() {
                                         children: pollLoading ? "Generating..." : "🎯 Take Quick Poll"
                                     }, void 0, false, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 492,
+                                        lineNumber: 620,
                                         columnNumber: 29
                                     }, this),
                                     isDev && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1087,7 +1299,7 @@ function CourseGraphPage() {
                                                 children: "Dev Controls"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 503,
+                                                lineNumber: 631,
                                                 columnNumber: 37
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1098,14 +1310,14 @@ function CourseGraphPage() {
                                                         className: "w-3 h-3"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 510,
+                                                        lineNumber: 638,
                                                         columnNumber: 41
                                                     }, this),
                                                     " Simulate Correct"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 506,
+                                                lineNumber: 634,
                                                 columnNumber: 37
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1116,14 +1328,14 @@ function CourseGraphPage() {
                                                         className: "w-3 h-3"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 516,
+                                                        lineNumber: 644,
                                                         columnNumber: 41
                                                     }, this),
                                                     " Simulate Wrong"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 512,
+                                                lineNumber: 640,
                                                 columnNumber: 37
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1134,32 +1346,32 @@ function CourseGraphPage() {
                                                         className: "w-3 h-3"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                        lineNumber: 522,
+                                                        lineNumber: 650,
                                                         columnNumber: 41
                                                     }, this),
                                                     " Simulate Exposure (+30%)"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                                lineNumber: 518,
+                                                lineNumber: 646,
                                                 columnNumber: 37
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                        lineNumber: 502,
+                                        lineNumber: 630,
                                         columnNumber: 33
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 425,
+                                lineNumber: 553,
                                 columnNumber: 25
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 396,
+                        lineNumber: 524,
                         columnNumber: 21
                     }, this),
                     pollModalOpen && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(PollModal, {
@@ -1175,19 +1387,19 @@ function CourseGraphPage() {
                         }
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 532,
+                        lineNumber: 660,
                         columnNumber: 21
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                lineNumber: 322,
+                lineNumber: 436,
                 columnNumber: 13
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/src/app/courses/[id]/page.tsx",
-        lineNumber: 279,
+        lineNumber: 393,
         columnNumber: 9
     }, this);
 }
@@ -1214,7 +1426,7 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                         className: "w-6 h-6 animate-spin text-[#C5AE79]"
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 581,
+                        lineNumber: 709,
                         columnNumber: 25
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1222,13 +1434,13 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                         children: "Generating question..."
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 582,
+                        lineNumber: 710,
                         columnNumber: 25
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                lineNumber: 580,
+                lineNumber: 708,
                 columnNumber: 21
             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["Fragment"], {
                 children: [
@@ -1240,7 +1452,7 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                                 children: poll.question
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 589,
+                                lineNumber: 717,
                                 columnNumber: 29
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1250,18 +1462,18 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                                     className: "w-4 h-4"
                                 }, void 0, false, {
                                     fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                    lineNumber: 596,
+                                    lineNumber: 724,
                                     columnNumber: 33
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 592,
+                                lineNumber: 720,
                                 columnNumber: 29
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 588,
+                        lineNumber: 716,
                         columnNumber: 25
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1278,13 +1490,13 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                                 children: opt
                             }, i, false, {
                                 fileName: "[project]/src/app/courses/[id]/page.tsx",
-                                lineNumber: 609,
+                                lineNumber: 737,
                                 columnNumber: 37
                             }, this);
                         })
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 600,
+                        lineNumber: 728,
                         columnNumber: 25
                     }, this),
                     !showResult && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -1294,7 +1506,7 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                         children: "Submit Answer"
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 629,
+                        lineNumber: 757,
                         columnNumber: 29
                     }, this),
                     showResult && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1302,19 +1514,19 @@ function PollModal({ poll, loading, nodeId, onClose, onResult }) {
                         children: selected === poll.correct_answer ? "✅ Correct! Mastery updated." : `❌ Wrong. Correct answer: ${poll.correct_answer}`
                     }, void 0, false, {
                         fileName: "[project]/src/app/courses/[id]/page.tsx",
-                        lineNumber: 639,
+                        lineNumber: 767,
                         columnNumber: 29
                     }, this)
                 ]
             }, void 0, true)
         }, void 0, false, {
             fileName: "[project]/src/app/courses/[id]/page.tsx",
-            lineNumber: 578,
+            lineNumber: 706,
             columnNumber: 13
         }, this)
     }, void 0, false, {
         fileName: "[project]/src/app/courses/[id]/page.tsx",
-        lineNumber: 577,
+        lineNumber: 705,
         columnNumber: 9
     }, this);
 }

@@ -80,19 +80,22 @@ class PollAnswer(BaseModel):
 # LLM Prompts
 # ---------------------
 
-EXTRACTION_PROMPT = """You are an expert ontologist. Analyze the following text and extract a knowledge graph of concepts.
+EXTRACTION_PROMPT = """You are an expert ontologist. Analyze the following text and extract a knowledge graph of concepts as a single connected DAG.
 
-Instructions:
-1. Extract 25-40 nodes forming a Directed Acyclic Graph (DAG). No isolated nodes.
-2. Each node has: label, description (one sentence), concept_type (one of: concept, process, formula).
-3. Each edge represents a prerequisite relationship: source is_prerequisite_of target.
-4. Ensure the graph is a valid DAG (no cycles).
+CRITICAL RULES:
+1. Extract 25-40 nodes. Every node MUST appear in at least one edge (as source_label OR target_label). No isolated nodes.
+2. Each node: label (short, unique), description (one sentence), concept_type (exactly one of: concept, process, formula).
+3. Edges: source_label is_prerequisite_of target_label. Use the EXACT same label strings as in nodes (copy-paste to avoid typos).
+4. The graph must be one connected DAG: there must be a path from any node to any other along the directed edges. No cycles.
+5. Order nodes so foundational concepts come first; later nodes can depend on earlier ones. Add edges so every node is connected (e.g. chain prerequisites: A→B→C or tree: A→B, A→C).
 
-Respond ONLY with valid JSON matching this exact schema:
+Output ONLY valid JSON, no markdown or explanation. Schema:
 {
   "nodes": [{"label": "string", "description": "string", "concept_type": "concept|process|formula"}],
   "edges": [{"source_label": "string", "target_label": "string", "relationship": "is_prerequisite_of"}]
 }
+
+Every label in "nodes" must appear in at least one "edges" entry as source_label or target_label.
 
 Text to analyze:
 """
@@ -290,6 +293,32 @@ def get_course_graph(
     }
 
 
+def _ensure_connected_kg(kg: dict) -> dict:
+    """Ensure every node appears in at least one edge so the graph has no isolated nodes."""
+    nodes = kg.get("nodes", [])
+    edges = kg.get("edges", [])
+    if not nodes:
+        return kg
+    labels_in_edges = set()
+    for e in edges:
+        labels_in_edges.add(e.get("source_label", "").strip())
+        labels_in_edges.add(e.get("target_label", "").strip())
+    node_labels = [n.get("label", "").strip() for n in nodes if n.get("label", "").strip()]
+    isolated = [lbl for lbl in node_labels if lbl not in labels_in_edges]
+    if not isolated:
+        return kg
+    first_label = node_labels[0]
+    for lbl in isolated:
+        if lbl != first_label:
+            edges.append({
+                "source_label": first_label,
+                "target_label": lbl,
+                "relationship": "is_prerequisite_of",
+            })
+    kg["edges"] = edges
+    return kg
+
+
 def _persist_kg_to_course(kg: dict, course_id: str, db: Session):
     """Clear existing graph and persist new KG nodes/edges to DB."""
     db.query(ConceptEdge).filter(ConceptEdge.course_id == course_id).delete()
@@ -368,7 +397,7 @@ async def upload_pdf(
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"LLM API error: {e}")
 
-    # Persist to DB (fast — no LLM call)
+    kg = _ensure_connected_kg(kg)
     _persist_kg_to_course(kg, course_id, db)
 
     # Return the graph immediately

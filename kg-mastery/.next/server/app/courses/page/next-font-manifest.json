@@ -1,6 +1,10 @@
 {
   "pages": {},
-  "app": {},
-  "appUsingSizeAdjust": false,
+  "app": {
+    "[project]/src/app/courses/page": [
+      "static/media/7f20430e44eb7422-s.p.bd5bbcc6.woff2"
+    ]
+  },
+  "appUsingSizeAdjust": true,
   "pagesUsingSizeAdjust": false
 }
