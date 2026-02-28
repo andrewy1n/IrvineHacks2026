@@ -4,3 +4,4 @@ python-multipart
 PyPDF2
 google-genai
 python-dotenv
+sqlalchemy
