@@ -29,6 +29,7 @@ const resultEl = document.getElementById("result");
 const cancelBtn = document.getElementById("cancelClassify");
 
 const CREATE_TIMEOUT_MS = 30000;
+const CREATE_DOWNLOAD_TIMEOUT_MS = 600000; // 10 min when triggering model download
 const PROMPT_TIMEOUT_MS = 60000;
 const withTimeout = (p, ms, msg) =>
   Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(msg || "Timed out")), ms))]);
@@ -83,13 +84,14 @@ async function run() {
     setStatus("Model downloading… Reload this page when ready.");
     return;
   }
-  if (availability === "downloadable") {
-    setStatus("Model may need to download. Click the extension’s Classify again to retry.");
-    return;
+  const needsDownload = availability === "downloadable";
+  if (needsDownload) {
+    setStatus("Starting model download… This may take several minutes.");
+  } else {
+    setStatus("Classifying…");
   }
-
-  setStatus("Classifying…");
   if (cancelBtn) cancelBtn.hidden = false;
+  const createTimeout = needsDownload ? CREATE_DOWNLOAD_TIMEOUT_MS : CREATE_TIMEOUT_MS;
   let session;
   try {
     session = await withTimeout(
@@ -97,15 +99,19 @@ async function run() {
         expectedInputs: [{ type: "text", languages: ["en"] }],
         expectedOutputs: [{ type: "text", languages: ["en"] }],
       }),
-      CREATE_TIMEOUT_MS,
+      createTimeout,
       "Session creation timed out"
     );
   } catch (e) {
     setStatus("Could not create session: " + (e.message || e), "error");
     if (cancelBtn) cancelBtn.hidden = true;
+    if (needsDownload) {
+      statusEl.textContent += " Reload and try Classify again once the model has finished downloading.";
+    }
     return;
   }
 
+  setStatus("Classifying…");
   let cancelReject;
   const cancelPromise = new Promise((_, rej) => { cancelReject = rej; });
   if (cancelBtn) {

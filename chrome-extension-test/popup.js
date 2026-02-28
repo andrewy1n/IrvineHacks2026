@@ -145,18 +145,21 @@ async function runClassification() {
     classifyBtn.disabled = false;
     return;
   }
-  if (availability === "downloadable" || availability === "downloading") {
-    showClassificationResult(availability === "downloading" ? "Model downloading…" : "Model may need to download. Click Classify again after ready.");
+  if (availability === "downloading") {
+    showClassificationResult("Model downloading… Try Classify again when ready.");
     classifyBtn.disabled = false;
     return;
   }
   const CREATE_TIMEOUT_MS = 30000;
+  const CREATE_DOWNLOAD_TIMEOUT_MS = 600000; // 10 min when triggering model download
   const PROMPT_TIMEOUT_MS = 60000;
   const withTimeout = (p, ms, msg) =>
     Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(msg || "Timed out")), ms))]);
 
-  showClassificationResult("Classifying…");
+  const needsDownload = availability === "downloadable";
+  showClassificationResult(needsDownload ? "Starting model download… This may take several minutes." : "Classifying…");
   cancelBtn.hidden = false;
+  const createTimeout = needsDownload ? CREATE_DOWNLOAD_TIMEOUT_MS : CREATE_TIMEOUT_MS;
   let session;
   try {
     session = await withTimeout(
@@ -164,15 +167,18 @@ async function runClassification() {
         expectedInputs: [{ type: "text", languages: ["en"] }],
         expectedOutputs: [{ type: "text", languages: ["en"] }],
       }),
-      CREATE_TIMEOUT_MS,
+      createTimeout,
       "Session creation timed out"
     );
   } catch (e) {
-    showClassificationResult("Could not create session: " + (e.message || e), true);
+    let msg = "Could not create session: " + (e.message || e);
+    if (needsDownload) msg += " Try Classify again once the model has finished downloading.";
+    showClassificationResult(msg, true);
     classifyBtn.disabled = false;
     cancelBtn.hidden = true;
     return;
   }
+  showClassificationResult("Classifying…");
   let cancelReject;
   const cancelPromise = new Promise((_, rej) => { cancelReject = rej; });
   cancelBtn.onclick = () => cancelReject(new Error("Cancelled"));
