@@ -5,7 +5,8 @@
   "description": "Extract quiz questions from Gradescope and textbook content from OpenStax",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "minimum_chrome_version": "138",
-  "host_permissions": ["https://*.gradescope.com/*", "https://openstax.org/*", "<all_urls>"],
+  "host_permissions": ["https://*.gradescope.com/*", "https://openstax.org/*", "<all_urls>", "https://generativelanguage.googleapis.com/*"],
+  "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
       "matches": ["https://*.gradescope.com/*", "https://openstax.org/*"],
@@ -21,5 +22,6 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Website Scraping Tool"
-  }
+  },
+  "options_ui": { "page": "options.html" }
 }
