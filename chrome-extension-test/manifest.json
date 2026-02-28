@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Gradescope Quiz Reader",
+  "version": "1.0",
+  "description": "Extract quiz questions and answers from Gradescope quiz pages; extract text from local PDFs",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://*.gradescope.com/*", "file:///*"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.gradescope.com/*", "file:///*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Gradescope Quiz Reader"
+  }
+}
