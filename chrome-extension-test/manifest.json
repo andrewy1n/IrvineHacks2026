@@ -3,12 +3,18 @@
   "name": "Website Scraping Tool",
   "version": "1.0",
   "description": "Extract quiz questions from Gradescope and textbook content from OpenStax",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": ["https://*.gradescope.com/*", "https://openstax.org/*"],
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "minimum_chrome_version": "138",
+  "host_permissions": ["https://*.gradescope.com/*", "https://openstax.org/*", "<all_urls>"],
   "content_scripts": [
     {
       "matches": ["https://*.gradescope.com/*", "https://openstax.org/*"],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["selection-portal.js"],
       "run_at": "document_idle"
     }
   ],

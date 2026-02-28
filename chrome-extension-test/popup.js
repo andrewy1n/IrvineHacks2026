@@ -1,9 +1,25 @@
 const QUIZ_STORAGE_KEY = "gradescope_quiz_data";
 const OPENSTAX_STORAGE_KEY = "openstax_page_data";
 const OPENSTAX_HISTORY_KEY = "openstax_reading_history";
+
+const CONTENT_CATEGORIES = [
+  "Educational",
+  "Quiz/Assessment",
+  "Reference",
+  "News",
+  "Social",
+  "Shopping",
+  "Entertainment",
+  "Technical",
+  "Other",
+];
+
 const out = document.getElementById("out");
 const refreshBtn = document.getElementById("refresh");
 const copyBtn = document.getElementById("copy");
+const classifyBtn = document.getElementById("classify");
+const cancelBtn = document.getElementById("cancelClassify");
+const classificationResult = document.getElementById("classificationResult");
 
 function isOpenStaxUrl(url) {
   return url && url.includes("openstax.org");
@@ -64,7 +80,125 @@ function showOpenStax(data, history) {
   out.textContent = `${data.title || "OpenStax"}\n\n${historyNote}Currently visible:\n${preview}${data.fullText.length > 12000 ? "\n\n… (truncated)" : ""}`;
 }
 
+function getCurrentExtractedText() {
+  const data = out._lastData;
+  if (!data) return null;
+  if (out._mode === "openstax" && data.fullText) return data.fullText.slice(0, 8000);
+  if (out._mode === "quiz" && data.questions && data.questions.length) {
+    return data.questions
+      .map(
+        (q, i) =>
+          `Q${i + 1}: ${q.question || ""}\n${(q.choices || []).join("\n")}`
+      )
+      .join("\n\n");
+  }
+  return null;
+}
+
+function showClassificationResult(text, isError = false) {
+  classificationResult.textContent = text;
+  classificationResult.hidden = false;
+  classificationResult.classList.toggle("error", isError);
+}
+
+function hideClassificationResult() {
+  classificationResult.hidden = true;
+  classificationResult.classList.remove("error");
+}
+
+function getLanguageModel() {
+  if (typeof LanguageModel !== "undefined") return LanguageModel;
+  if (typeof chrome !== "undefined" && chrome?.aiOriginTrial?.languageModel) return chrome.aiOriginTrial.languageModel;
+  return null;
+}
+
+const CLASSIFY_PENDING_KEY = "classify_pending_text";
+
+async function runClassification() {
+  const text = getCurrentExtractedText();
+  if (!text || text.length < 10) {
+    showClassificationResult("Extract content first (Refresh on a Gradescope or OpenStax page).", true);
+    return;
+  }
+  const LM = getLanguageModel();
+  if (!LM) {
+    showClassificationResult("Opening classifier tab… (popup has no API access)", false);
+    await chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text });
+    chrome.tabs.create({ url: chrome.runtime.getURL("classify.html") });
+    return;
+  }
+  classifyBtn.disabled = true;
+  showClassificationResult("Checking model…");
+  let availability;
+  try {
+    availability = await LM.availability({
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    });
+  } catch (e) {
+    showClassificationResult("Availability check failed: " + (e.message || e), true);
+    classifyBtn.disabled = false;
+    return;
+  }
+  if (availability === "unavailable") {
+    showClassificationResult("Gemini Nano unavailable on this device (see Chrome AI requirements).", true);
+    classifyBtn.disabled = false;
+    return;
+  }
+  if (availability === "downloadable" || availability === "downloading") {
+    showClassificationResult(availability === "downloading" ? "Model downloading…" : "Model may need to download. Click Classify again after ready.");
+    classifyBtn.disabled = false;
+    return;
+  }
+  const CREATE_TIMEOUT_MS = 30000;
+  const PROMPT_TIMEOUT_MS = 60000;
+  const withTimeout = (p, ms, msg) =>
+    Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(msg || "Timed out")), ms))]);
+
+  showClassificationResult("Classifying…");
+  cancelBtn.hidden = false;
+  let session;
+  try {
+    session = await withTimeout(
+      LM.create({
+        expectedInputs: [{ type: "text", languages: ["en"] }],
+        expectedOutputs: [{ type: "text", languages: ["en"] }],
+      }),
+      CREATE_TIMEOUT_MS,
+      "Session creation timed out"
+    );
+  } catch (e) {
+    showClassificationResult("Could not create session: " + (e.message || e), true);
+    classifyBtn.disabled = false;
+    cancelBtn.hidden = true;
+    return;
+  }
+  let cancelReject;
+  const cancelPromise = new Promise((_, rej) => { cancelReject = rej; });
+  cancelBtn.onclick = () => cancelReject(new Error("Cancelled"));
+  const categoriesList = CONTENT_CATEGORIES.join(", ");
+  const prompt = `Classify the following content into exactly one of these categories. Reply with only the category name, nothing else.\n\nCategories: ${categoriesList}\n\nContent:\n${text.slice(0, 6000)}`;
+  try {
+    const result = await withTimeout(
+      Promise.race([session.prompt(prompt), cancelPromise]),
+      PROMPT_TIMEOUT_MS,
+      "Classification timed out"
+    );
+    session.destroy();
+    const trimmed = (result || "").trim();
+    const match = CONTENT_CATEGORIES.find((c) => trimmed.toLowerCase().includes(c.toLowerCase()));
+    showClassificationResult("Classification: " + (match || trimmed || "(unknown)"));
+  } catch (e) {
+    if (session) session.destroy();
+    showClassificationResult(e.message === "Cancelled" ? "Cancelled." : "Classification failed: " + (e.message || e), e.message === "Cancelled" ? false : true);
+  }
+  classifyBtn.disabled = false;
+  cancelBtn.hidden = true;
+  cancelBtn.onclick = null;
+}
+
 function load() {
+  hideClassificationResult();
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
     const openstax = tab && isOpenStaxUrl(tab.url);
@@ -147,5 +281,7 @@ copyBtn.addEventListener("click", () => {
     setTimeout(() => { copyBtn.textContent = isOpenStax ? "Copy text" : "Copy JSON"; }, 1500);
   });
 });
+
+classifyBtn.addEventListener("click", () => runClassification());
 
 load();

@@ -38,14 +38,29 @@
     button:hover { background: #1557b0; }
     button.secondary { background: #5f6368; margin-left: 6px; }
     button.secondary:hover { background: #3c4043; }
+    button.classify-btn { background: #0d9488; margin-left: 6px; }
+    button.classify-btn:hover { background: #0f766e; }
+    button.classify-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .classification-result {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: #ccfbf1;
+      border: 1px solid #5eead4;
+      font-size: 12px;
+    }
+    .classification-result.error { background: #fee2e2; border-color: #fca5a5; }
   </style>
 </head>
 <body>
   <h2>Gradescope Quiz Reader</h2>
   <p class="meta">Gradescope: quiz page. OpenStax: book page. Click Refresh to extract.</p>
   <div id="out" class="empty">Loading…</div>
+  <div id="classificationResult" class="classification-result" hidden></div>
   <button id="refresh">Refresh</button>
   <button id="copy" class="secondary">Copy JSON</button>
+  <button id="classify" class="classify-btn">Classify with AI</button>
+  <button id="cancelClassify" class="secondary" hidden>Cancel</button>
   <script src="popup.js"></script>
 </body>
 </html>

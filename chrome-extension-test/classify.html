@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Classify content</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 560px;
+      margin: 24px auto;
+      padding: 0 16px;
+    }
+    h1 { font-size: 18px; }
+    #status { margin: 12px 0; padding: 10px; border-radius: 6px; background: #f0f9ff; border: 1px solid #bae6fd; }
+    #status.error { background: #fee2e2; border-color: #fca5a5; }
+    #status.done { background: #ccfbf1; border-color: #5eead4; }
+    #result { font-weight: 600; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Content classification (Gemini Nano)</h1>
+  <div id="status">Loading…</div>
+  <div id="result"></div>
+  <button id="cancelClassify" type="button" hidden style="margin-top: 12px; padding: 8px 14px;">Cancel</button>
+  <script src="classify.js"></script>
+</body>
+</html>
