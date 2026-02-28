@@ -1,63 +1,150 @@
 (function () {
   const QUIZ_STORAGE_KEY = "gradescope_quiz_data";
-  const PDF_STORAGE_KEY = "pdf_text_data";
+  const OPENSTAX_STORAGE_KEY = "openstax_page_data";
+  const OPENSTAX_HISTORY_KEY = "openstax_reading_history";
+  let openStaxVisibleBuffer = new Set();
+  // Accumulates every section the user has ever seen in this session (never cleared on scroll)
+  let viewedSectionsHistory = [];
+  let viewedSectionsSet = new Set();
+  let currentViewportObserver = null;
+  let currentMutationObserver = null;
+  let lastObservedUrl = null;
 
-  function isPdfViewerPage() {
-    if (window.location.protocol !== "file:") return false;
-    const path = (window.location.pathname || "").toLowerCase();
-    return path.endsWith(".pdf");
+  function isOpenStaxPage() {
+    return /^https:\/\/openstax\.org\//.test(window.location.href);
   }
 
-  function extractPdfText() {
-    const pages = [];
-    let fullText = "";
-    const viewer = document.getElementById("viewer");
-    const root = viewer || document.body;
-    const pageEls = root.querySelectorAll(".page");
-    if (pageEls.length > 0) {
-      pageEls.forEach((page, i) => {
-        const textLayer = page.querySelector(".textLayer, [class*='textLayer']");
-        const t = textLayer ? textLayer.textContent || "" : "";
-        const trimmed = t.replace(/\s+/g, " ").trim();
-        pages.push({ pageIndex: i + 1, text: trimmed });
-        fullText += (fullText ? "\n\n" : "") + trimmed;
-      });
-    } else {
-      const textLayers = root.querySelectorAll(".textLayer, [class*='textLayer']");
-      if (textLayers.length > 0) {
-        textLayers.forEach((el, i) => {
-          const t = (el.textContent || "").replace(/\s+/g, " ").trim();
-          pages.push({ pageIndex: i + 1, text: t });
-          fullText += (fullText ? "\n\n" : "") + t;
-        });
-      } else {
-        const spans = root.querySelectorAll("#viewer span[role='presentation']");
-        if (spans.length > 0) {
-          const byPage = {};
-          spans.forEach((span) => {
-            const page = span.closest(".page") || span.closest("[class*='page']");
-            const key = page ? page.getAttribute("data-page-number") || "1" : "1";
-            if (!byPage[key]) byPage[key] = [];
-            byPage[key].push(span.textContent || "");
-          });
-          const keys = Object.keys(byPage).sort((a, b) => Number(a) - Number(b));
-          keys.forEach((key, i) => {
-            const t = byPage[key].join(" ").replace(/\s+/g, " ").trim();
-            pages.push({ pageIndex: i + 1, text: t });
-            fullText += (fullText ? "\n\n" : "") + t;
-          });
-        }
-      }
-    }
+  const OPENSTAX_SKIP_PATTERNS = /citation|attribution|order a print|© |creative commons|skip to content/i;
+  const OPENSTAX_VISIBLE_THRESHOLD = 0.5;
+  const OPENSTAX_SELECTORS = ".os-content p, .os-content h2, .os-content h3, .os-content h4, main p, main h2, main h3, main h4, [role='main'] p, [role='main'] h2, [role='main'] h3, [role='main'] h4";
+
+  function getPageTitle() {
+    const titleEl = document.querySelector("main h1, .os-content h1, h1");
+    return titleEl ? titleEl.textContent.trim() : document.title;
+  }
+
+  function saveVisibleOpenStaxPayload(activeText) {
     const payload = {
       url: window.location.href,
-      title: document.title || (window.location.pathname || "").split("/").pop() || "PDF",
+      title: getPageTitle(),
       extractedAt: new Date().toISOString(),
-      fullText: fullText.trim(),
-      pages,
+      fullText: activeText,
+      sections: [{ heading: "Visible on screen", content: activeText }],
+      visibleOnly: true,
     };
-    chrome.storage.local.set({ [PDF_STORAGE_KEY]: payload });
+    chrome.storage.local.set({ [OPENSTAX_STORAGE_KEY]: payload });
     return payload;
+  }
+
+  function addToHistory(text) {
+    if (!text || viewedSectionsSet.has(text)) return;
+    viewedSectionsSet.add(text);
+    viewedSectionsHistory.push({ text, seenAt: new Date().toISOString(), url: window.location.href, title: getPageTitle() });
+    chrome.storage.local.set({ [OPENSTAX_HISTORY_KEY]: viewedSectionsHistory });
+  }
+
+  function getCurrentlyVisibleOpenStaxText() {
+    const elements = document.querySelectorAll(OPENSTAX_SELECTORS);
+    const viewHeight = window.innerHeight;
+    const viewWidth = window.innerWidth;
+    const visibleTexts = [];
+    elements.forEach((el) => {
+      const text = (el.innerText || el.textContent || "").trim();
+      if (!text || OPENSTAX_SKIP_PATTERNS.test(text)) return;
+      const rect = el.getBoundingClientRect();
+      const visibleTop = Math.max(rect.top, 0);
+      const visibleBottom = Math.min(rect.bottom, viewHeight);
+      const visibleLeft = Math.max(rect.left, 0);
+      const visibleRight = Math.min(rect.right, viewWidth);
+      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+      const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+      const visibleRatio = rect.height && rect.width
+        ? (visibleHeight * visibleWidth) / (rect.height * rect.width)
+        : 0;
+      if (visibleRatio >= OPENSTAX_VISIBLE_THRESHOLD) visibleTexts.push(text);
+    });
+    return visibleTexts.join("\n\n");
+  }
+
+  function observeNewElements(observer) {
+    const allElements = document.querySelectorAll(OPENSTAX_SELECTORS);
+    allElements.forEach((el) => {
+      if (!el._openstaxObserved) {
+        el._openstaxObserved = true;
+        observer.observe(el);
+      }
+    });
+  }
+
+  function setupOpenStaxVisibleObserver() {
+    // Tear down previous observers if re-initializing after SPA navigation
+    if (currentViewportObserver) currentViewportObserver.disconnect();
+    if (currentMutationObserver) currentMutationObserver.disconnect();
+
+    openStaxVisibleBuffer.clear();
+    let studyTimer = null;
+    lastObservedUrl = window.location.href;
+
+    const viewportObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const text = (entry.target.innerText || entry.target.textContent || "").trim();
+        if (!text || OPENSTAX_SKIP_PATTERNS.test(text)) return;
+
+        if (entry.isIntersecting) {
+          openStaxVisibleBuffer.add(text);
+          addToHistory(text);
+        } else {
+          openStaxVisibleBuffer.delete(text);
+        }
+      });
+
+      // Trigger on any intersection change (enter or leave)
+      clearTimeout(studyTimer);
+      studyTimer = setTimeout(() => {
+        const activeText = Array.from(openStaxVisibleBuffer).join("\n\n");
+        if (activeText) saveVisibleOpenStaxPayload(activeText);
+      }, 1000);
+    }, { root: null, rootMargin: "0px", threshold: OPENSTAX_VISIBLE_THRESHOLD });
+
+    currentViewportObserver = viewportObserver;
+    observeNewElements(viewportObserver);
+
+    // Watch for dynamically added content (SPA content loading)
+    const mutationObserver = new MutationObserver(() => {
+      observeNewElements(viewportObserver);
+    });
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    currentMutationObserver = mutationObserver;
+
+    // Seed buffer and history with whatever is currently visible
+    getCurrentlyVisibleOpenStaxText()
+      .split("\n\n")
+      .filter(Boolean)
+      .forEach((t) => {
+        openStaxVisibleBuffer.add(t);
+        addToHistory(t);
+      });
+    const initialText = Array.from(openStaxVisibleBuffer).join("\n\n");
+    if (initialText) saveVisibleOpenStaxPayload(initialText);
+  }
+
+  // Re-initialize observer when OpenStax SPA navigates to a new section/chapter
+  function watchForSpaNavigation() {
+    const check = () => {
+      if (window.location.href !== lastObservedUrl) {
+        // Wait for new DOM content to settle before re-observing
+        setTimeout(setupOpenStaxVisibleObserver, 800);
+      }
+    };
+    // Patch pushState/replaceState since OpenStax uses the History API
+    ["pushState", "replaceState"].forEach((fn) => {
+      const original = history[fn];
+      history[fn] = function (...args) {
+        original.apply(this, args);
+        check();
+      };
+    });
+    window.addEventListener("popstate", check);
   }
 
   function text(el) {
@@ -196,26 +283,28 @@
     return out;
   };
 
+  window.__openstaxExtract = function () {
+    const activeText = getCurrentlyVisibleOpenStaxText();
+    const out = saveVisibleOpenStaxPayload(activeText);
+    console.log("OpenStax visible extract:", out);
+    return out;
+  };
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg === "EXTRACT") {
-      sendResponse(isPdfViewerPage() ? extractPdfText() : runExtraction());
-    } else if (msg === "EXTRACT_PDF") {
-      sendResponse(extractPdfText());
+      if (isOpenStaxPage()) {
+        sendResponse(saveVisibleOpenStaxPayload(getCurrentlyVisibleOpenStaxText()));
+      } else {
+        sendResponse(runExtraction());
+      }
+    } else if (msg === "EXTRACT_OPENSTAX") {
+      sendResponse(saveVisibleOpenStaxPayload(getCurrentlyVisibleOpenStaxText()));
     }
   });
 
-  window.__extractPdfText = extractPdfText;
-
-  if (isPdfViewerPage()) {
-    let attempts = 0;
-    function tryPdf() {
-      const result = extractPdfText();
-      if (!result.fullText && (!result.pages || !result.pages.length) && attempts < 3) {
-        attempts += 1;
-        setTimeout(tryPdf, 1500);
-      }
-    }
-    tryPdf();
+  if (isOpenStaxPage()) {
+    setupOpenStaxVisibleObserver();
+    watchForSpaNavigation();
   } else {
     runExtraction();
   }
