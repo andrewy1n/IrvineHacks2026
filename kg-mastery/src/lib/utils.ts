@@ -1,32 +1,54 @@
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import type { ConceptNode } from '@/types';
-import { confidenceToNodeFill } from './colors';
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+    return twMerge(clsx(inputs));
 }
 
-export const getStatusFromConfidence = (confidence: number): ConceptNode['status'] => {
-  if (confidence >= 0.8) return 'mastered';
-  if (confidence >= 0.6) return 'on_track';
-  if (confidence >= 0.4) return 'building';
-  if (confidence > 0) return 'developing';
-  return 'not_started';
-};
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export const STATUS_COLORS: Record<ConceptNode['status'], string> = {
-  not_started: '#e2e8f0', // slate-200
-  developing: '#fed7aa', // orange-200
-  building: '#fef08a', // yellow-200
-  on_track: '#d9f99d', // lime-200
-  mastered: '#bbf7d0', // green-200
-};
+export function getStatusFromConfidence(confidence: number) {
+    if (confidence === 0) return { label: "Unseen", emoji: "⚫", color: "grey" } as const;
+    if (confidence < 0.4) return { label: "Struggling", emoji: "🔴", color: "red" } as const;
+    if (confidence < 0.7) return { label: "Exposed", emoji: "🟡", color: "gold" } as const;
+    return { label: "Mastered", emoji: "🟢", color: "cyan" } as const;
+}
 
-export const STATUS_LABELS: Record<ConceptNode['status'], string> = {
-  not_started: 'Not Started',
-  developing: 'Developing',
-  building: 'Building',
-  on_track: 'On Track',
-  mastered: 'Mastered',
-};
+export function getAuthToken(): string | null {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("nebula_token");
+}
+
+export function setAuthToken(token: string) {
+    localStorage.setItem("nebula_token", token);
+}
+
+export function clearAuthToken() {
+    localStorage.removeItem("nebula_token");
+}
+
+export async function apiFetch(path: string, options: RequestInit = {}) {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+        ...(options.headers as Record<string, string> || {}),
+    };
+    if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+    }
+    if (!(options.body instanceof FormData)) {
+        headers["Content-Type"] = "application/json";
+    }
+
+    const res = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers,
+    });
+
+    if (res.status === 401) {
+        clearAuthToken();
+        window.location.href = "/login";
+        throw new Error("Unauthorized");
+    }
+
+    return res;
+}

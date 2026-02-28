@@ -1,19 +1,51 @@
-export const COLOR_HEX = {
-  active: "#3b82f6", // blue
+export const COLOR_HEX: Record<string, string> = {
+    gray: "#94a3b8",
+    red: "#fb923c",       // orange-400 (matches heatmap struggling)
+    yellow: "#eab308",
+    green: "#22c55e",
+    active: "#3b82f6",
 };
 
-export function confidenceToNodeFill(confidence: number) {
-  if (confidence >= 0.8) return "#bbf7d0"; // green-200 (Mastered)
-  if (confidence >= 0.6) return "#d9f99d"; // lime-200 (On Track)
-  if (confidence >= 0.4) return "#fef08a"; // yellow-200 (Building)
-  if (confidence > 0) return "#fed7aa";    // orange-200 (Developing)
-  return "#e2e8f0";                        // slate-200 (Not Started)
+export function confidenceToColor(confidence: number): string {
+    if (confidence === 0) return "gray";
+    if (confidence < 0.4) return "red";
+    if (confidence < 0.7) return "yellow";
+    return "green";
 }
 
-export function confidenceToNodeBorder(confidence: number) {
-  if (confidence >= 0.8) return "#4ade80"; // green-400
-  if (confidence >= 0.6) return "#a3e635"; // lime-400
-  if (confidence >= 0.4) return "#facc15"; // yellow-400
-  if (confidence > 0) return "#fb923c";    // orange-400
-  return "#94a3b8";                        // slate-400
+export function confidenceToFill(confidence: number): string {
+    if (confidence === 0) return "#e2e8f0";     // slate-200 (unvisited)
+    if (confidence < 0.2) return "#fecaca";     // red-200
+    if (confidence < 0.4) return "#fed7aa";     // orange-200
+    if (confidence < 0.55) return "#fef08a";   // yellow-200
+    if (confidence < 0.7) return "#d9f99d";    // lime-200
+    if (confidence < 0.85) return "#bbf7d0";   // green-200
+    return "#86efac";                            // green-300
+}
+
+// 4-bucket node fill for the student knowledge graph (matches heatmap visual bands)
+export function confidenceToNodeFill(confidence: number): string {
+    if (confidence === 0) return "#e2e8f0";     // slate-200 (not started)
+    if (confidence < 0.4) return "#fed7aa";     // orange-200 (struggling)
+    if (confidence < 0.55) return "#fef08a";   // yellow-200 (partial)
+    if (confidence < 0.7) return "#d9f99d";    // lime-200 (good)
+    return "#bbf7d0";                            // green-200 (mastered)
+}
+
+// 4-bucket node border for the student knowledge graph
+export function confidenceToNodeBorder(confidence: number): string {
+    if (confidence === 0) return "#94a3b8";     // gray
+    if (confidence < 0.4) return "#fb923c";    // orange-400 (struggling)
+    if (confidence < 0.55) return "#facc15";   // yellow-400 (partial)
+    if (confidence < 0.7) return "#a3e635";    // lime-400 (good)
+    return "#4ade80";                            // green-400 (mastered)
+}
+
+// Dark theme: node fill (subtle on #0a0a0a)
+export function confidenceToNodeFillDark(confidence: number): string {
+    if (confidence === 0) return "rgba(148,163,184,0.12)";
+    if (confidence < 0.4) return "rgba(251,146,60,0.18)";
+    if (confidence < 0.55) return "rgba(250,204,21,0.18)";
+    if (confidence < 0.7) return "rgba(163,230,53,0.18)";
+    return "rgba(74,222,128,0.2)";
 }

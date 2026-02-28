@@ -30,3 +30,11 @@ dist-ssr
 __pycache__
 *.pyc
 .venv
+
+# Next.js
+.next
+
+# Build / cache
+*.sst
+*.db
+api/nebula.db
