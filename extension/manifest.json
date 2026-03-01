@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Website Scraping Tool",
+  "name": "Nebula",
   "version": "1.0",
-  "description": "Extract quiz questions from Gradescope and textbook content from OpenStax",
+  "description": "Nebula is a tool that helps you passively create a knowledge graph from your study session browsing.",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "minimum_chrome_version": "138",
   "host_permissions": ["https://*.gradescope.com/*", "https://openstax.org/*", "<all_urls>", "https://generativelanguage.googleapis.com/*","http://localhost:8000/*"],
@@ -19,9 +19,20 @@
       "run_at": "document_idle"
     }
   ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Website Scraping Tool"
+  "icons": {
+    "16": "icon.png",
+    "32": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
   },
-  "options_ui": { "page": "options.html" }
+  "action": {
+    "default_icon": "icon.png",
+    "default_popup": "popup.html",
+    "default_title": "Nebula"
+  },
+  "options_ui": { "page": "options.html" },
+  "web_accessible_resources": [{
+    "resources": ["icon.png"],
+    "matches": ["<all_urls>"]
+  }]
 }

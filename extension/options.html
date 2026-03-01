@@ -2,43 +2,103 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Solve & Sync – Options</title>
+  <title>Nebula – Options</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
-    h1 { font-size: 18px; margin-bottom: 8px; }
-    h2 { font-size: 14px; margin: 24px 0 8px; color: #374151; }
-    p { color: #666; font-size: 13px; margin-bottom: 12px; }
-    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; }
-    input, select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; box-sizing: border-box; }
-    input:focus, select:focus { outline: none; border-color: #0d9488; }
-    button { margin-top: 12px; padding: 8px 16px; background: #0d9488; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; }
-    button:hover { background: #0f766e; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .saved { margin-top: 8px; font-size: 12px; color: #0f766e; }
-    .error { font-size: 12px; color: #b91c1c; margin-top: 4px; }
-    .backend-status { font-size: 12px; margin-top: 4px; }
-    #conceptsList { margin-top: 12px; max-height: 240px; overflow-y: auto; padding: 10px; background: #f3f4f6; border-radius: 8px; font-size: 12px; line-height: 1.5; }
+    body { 
+      font-family: system-ui, sans-serif; 
+      max-width: 480px; 
+      margin: 24px auto; 
+      padding: 0 16px; 
+      background-color: #050505;
+      color: #fafafa;
+    }
+    h1 { font-size: 18px; margin-bottom: 8px; font-weight: 600; }
+    h2 { font-size: 14px; margin: 24px 0 12px; color: #e4e4e7; font-weight: 500; }
+    p { color: #a1a1aa; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+    a { color: #fafafa; text-decoration: underline; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #e4e4e7; }
+    input, select { 
+      width: 100%; 
+      padding: 10px 12px; 
+      background-color: #0a0a0a;
+      color: #fafafa;
+      border: 1px solid rgba(255, 255, 255, 0.1); 
+      border-radius: 8px; 
+      font-size: 13px; 
+      box-sizing: border-box; 
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus { 
+      outline: none; 
+      border-color: rgba(255, 255, 255, 0.3); 
+    }
+    button { 
+      margin-top: 12px; 
+      margin-right: 8px;
+      padding: 10px 16px; 
+      background: #fafafa; 
+      color: #18181b; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 13px; 
+      font-weight: 500;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+          .saved { margin-top: 8px; font-size: 13px; color: #fafafa; }
+    .error { font-size: 13px; color: #f87171; margin-top: 6px; }
+    .backend-status { font-size: 13px; margin-top: 6px; color: #a1a1aa; }
+    #conceptsList { 
+      margin-top: 16px; 
+      max-height: 240px; 
+      overflow-y: auto; 
+      padding: 12px; 
+      background: #0a0a0a; 
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px; 
+      font-size: 13px; 
+      line-height: 1.6; 
+      color: #fafafa;
+    }
     #conceptsList:empty { display: none; }
-    #conceptsList .concept-item { padding: 2px 0; }
+    #conceptsList .concept-item { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    #conceptsList .concept-item:last-child { border-bottom: none; }
+    
+    /* Scrollbar styles */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
-  <h1>Solve & Sync – Options</h1>
+  <h1>Nebula – Options</h1>
 
   <h2>Backend (Knowledge Graph)</h2>
-  <p>Log in to sync classifications and mastery with your course knowledge graph (kg-mastery API at localhost:8000).</p>
+  <p>Log in to sync classifications and mastery with your course knowledge graph.</p>
   <label for="backendEmail">Email</label>
   <input type="email" id="backendEmail" placeholder="your@email.com" autocomplete="email">
+  <br><br>
   <label for="backendPassword">Password</label>
   <input type="password" id="backendPassword" placeholder="Password" autocomplete="current-password">
   <button id="backendLogin">Log in</button>
   <div id="backendStatus" class="backend-status" hidden></div>
   <div id="backendError" class="error" hidden></div>
 
-  <label for="courseSelect" style="margin-top: 16px;">Active course (for classification labels)</label>
-  <select id="courseSelect">
-    <option value="">— Select a course —</option>
-  </select>
+  <div style="margin-top: 24px;">
+    <label for="courseSelect">Active course (for classification labels)</label>
+    <select id="courseSelect">
+      <option value="">— Select a course —</option>
+    </select>
+  </div>
   <button id="refreshCourses">Refresh courses</button>
   <button id="refreshKg">Refresh knowledge graph</button>
   <div id="conceptsList" class="backend-status"></div>
@@ -47,8 +107,10 @@
   <p>Get a free API key at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>. It is stored locally and only used to evaluate your answers with Gemini.</p>
   <label for="apiKey">Gemini API key</label>
   <input type="password" id="apiKey" placeholder="Paste your API key here" autocomplete="off">
+  <br>
   <button id="save">Save</button>
   <div id="saved" class="saved" hidden>Saved.</div>
+  
   <script src="options.js"></script>
 </body>
 </html>

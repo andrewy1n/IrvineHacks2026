@@ -4,6 +4,7 @@ const popupTitle = document.getElementById("popup-title");
 const popupSubtext = document.getElementById("popup-subtext");
 const studyModeToggle = document.getElementById("study-mode-toggle");
 const viewKnowledgeMapBtn = document.getElementById("view-knowledge-map");
+const openOptionsBtn = document.getElementById("open-options");
 
 // Optional: set default subtext if you want to change it later
 const DEFAULT_SUBTEXT = "Manage your extension and turn study mode on or off.";
@@ -36,6 +37,10 @@ studyModeToggle.addEventListener("keydown", (e) => {
 });
 
 viewKnowledgeMapBtn.addEventListener("click", () => {
+  chrome.tabs.create({ url: "http://localhost:3000" });
+});
+
+openOptionsBtn.addEventListener("click", () => {
   chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
 });
 

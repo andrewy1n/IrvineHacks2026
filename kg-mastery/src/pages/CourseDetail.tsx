@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNebulaStore } from "@/store/nebulaStore";
 import { getAuthToken, apiFetch } from "@/lib/utils";
@@ -29,7 +30,9 @@ export default function CourseDetail() {
     setGraphData,
     poll,
     pollLoading,
+    pollError,
     pollModalOpen,
+    generatePoll,
   } = useNebulaStore();
 
   useEffect(() => {
@@ -39,6 +42,14 @@ export default function CourseDetail() {
     }
     if (courseId) fetchGraph(courseId);
   }, [courseId, navigate, fetchGraph]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && courseId) fetchGraph(courseId);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [courseId, fetchGraph]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -220,19 +231,25 @@ export default function CourseDetail() {
 
       <NodeDrawer />
 
-      {pollModalOpen && (
+      {pollModalOpen && createPortal(
         <PollModal
           poll={poll}
           loading={pollLoading}
+          error={pollError}
           nodeId={selectedNode?.id ?? ""}
           onClose={() => setPollModalOpen(false)}
+          onRetry={() => {
+            if (selectedNode) generatePoll(selectedNode.id);
+            else setPollModalOpen(false);
+          }}
           onResult={async (evalResult, problem) => {
             setPollModalOpen(false);
             if (selectedNode) {
               await updateMastery(selectedNode.id, evalResult, problem);
             }
           }}
-        />
+        />,
+        document.body
       )}
     </div>
   );
@@ -241,17 +258,34 @@ export default function CourseDetail() {
 function PollModal({
   poll,
   loading,
+  error,
+  nodeId,
   onClose,
+  onRetry,
   onResult,
 }: {
   poll: { question: string; options: string[]; correct_answer: string } | null;
   loading: boolean;
+  error: string | null;
   nodeId: string;
   onClose: () => void;
+  onRetry: () => void;
   onResult: (evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
+
+  const onRetryRef = useRef(onRetry);
+  const onCloseRef = useRef(onClose);
+  onRetryRef.current = onRetry;
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!loading && !error && !poll) {
+      if (nodeId) onRetryRef.current();
+      else onCloseRef.current();
+    }
+  }, [loading, error, poll, nodeId]);
 
   const handleSubmit = () => {
     if (!selected || !poll) return;
@@ -262,18 +296,45 @@ function PollModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md flex-shrink-0 rounded-2xl border border-white/20 bg-white/[0.05] p-6 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-2xl">
-        {loading || !poll ? (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      style={{ pointerEvents: "auto" }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div
+        className="w-full max-w-md flex-shrink-0 rounded-2xl border border-white/20 bg-white/[0.05] p-6 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-2xl"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {loading || (!poll && !error) ? (
           <div className="flex min-h-32 items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-white" />
             <span className="ml-3 text-sm text-white/70 tracking-wide uppercase">Generating question...</span>
+          </div>
+        ) : error ? (
+          <div className="space-y-4 py-2">
+            <h3 className="text-sm font-medium tracking-wide text-white">Could not generate question</h3>
+            <p className="text-sm text-white/70">{error}</p>
+            <div className="flex gap-2">
+              <Button
+                className="h-10 flex-1 bg-white/10 border border-white/20 text-white hover:bg-white/20 hover:border-white/50"
+                onClick={onRetry}
+              >
+                Retry
+              </Button>
+              <Button
+                variant="outline"
+                className="h-10 flex-1 border-white/20 bg-white/[0.03] text-white hover:bg-white/10 hover:border-white/40"
+                onClick={onClose}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         ) : (
           <>
             <div className="mb-6 flex items-start justify-between gap-3">
               <h3 className="min-w-0 flex-1 pr-4 text-sm font-medium leading-relaxed text-white tracking-wide">
-                {poll.question}
+                {poll!.question}
               </h3>
               <button
                 type="button"
@@ -284,11 +345,11 @@ function PollModal({
               </button>
             </div>
             <div className="mb-6 space-y-3">
-              {poll.options?.map((opt: string, i: number) => {
+              {poll!.options?.map((opt: string, i: number) => {
                 const letter = opt[0];
                 const isThis = selected === letter;
-                const isCorrectAnswer = showResult && letter === poll.correct_answer;
-                const isWrongSelected = showResult && isThis && letter !== poll.correct_answer;
+                const isCorrectAnswer = showResult && letter === poll!.correct_answer;
+                const isWrongSelected = showResult && isThis && letter !== poll!.correct_answer;
                 return (
                   <button
                     key={i}
@@ -322,12 +383,12 @@ function PollModal({
             {showResult && (
               <div
                 className={`py-3 rounded-lg backdrop-blur-md text-center text-sm font-medium tracking-wide uppercase ${
-                  selected === poll.correct_answer ? "bg-white/20 text-white border border-white/30" : "bg-red-500/20 text-red-100 border border-red-500/30"
+                  selected === poll!.correct_answer ? "bg-white/20 text-white border border-white/30" : "bg-red-500/20 text-red-100 border border-red-500/30"
                 }`}
               >
-                {selected === poll.correct_answer
+                {selected === poll!.correct_answer
                   ? "Correct! Mastery updated."
-                  : `Wrong. Correct answer: ${poll.correct_answer}`}
+                  : `Wrong. Correct answer: ${poll!.correct_answer}`}
               </div>
             )}
           </>

@@ -131,14 +131,32 @@ async function run() {
     return;
   }
   const needsDownload = availability === "downloadable";
+  let session;
+  const createTimeout = needsDownload ? CREATE_DOWNLOAD_TIMEOUT_MS : CREATE_TIMEOUT_MS;
+
   if (needsDownload) {
-    setStatus("Starting model download… This may take several minutes.");
+    const downloadBtn = document.getElementById("downloadModel");
+    if (downloadBtn) {
+      downloadBtn.hidden = false;
+      setStatus("Model needs to be downloaded. Click the button below.");
+      
+      await new Promise((resolve) => {
+        downloadBtn.onclick = async () => {
+          downloadBtn.hidden = true;
+          setStatus("Starting model download… This may take several minutes.");
+          if (cancelBtn) cancelBtn.hidden = false;
+          resolve();
+        };
+      });
+    } else {
+      setStatus("Starting model download… This may take several minutes.");
+      if (cancelBtn) cancelBtn.hidden = false;
+    }
   } else {
     setStatus("Classifying…");
+    if (cancelBtn) cancelBtn.hidden = false;
   }
-  if (cancelBtn) cancelBtn.hidden = false;
-  const createTimeout = needsDownload ? CREATE_DOWNLOAD_TIMEOUT_MS : CREATE_TIMEOUT_MS;
-  let session;
+
   try {
     session = await withTimeout(
       LM.create({

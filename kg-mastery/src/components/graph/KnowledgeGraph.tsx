@@ -557,7 +557,7 @@ export default function KnowledgeGraph({
                       borderRadius: "50%",
                     }}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center p-1.5 text-center pointer-events-none overflow-hidden">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-1.5 text-center pointer-events-none overflow-hidden gap-1">
                     <p
                       className="font-semibold leading-[1.15] transition-colors"
                       style={{
@@ -569,6 +569,13 @@ export default function KnowledgeGraph({
                     >
                       {node.label}
                     </p>
+                    {/* Mastery Bar */}
+                    <div className="w-10 h-1 bg-white/10 rounded-full overflow-hidden shrink-0">
+                      <div 
+                        className="h-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]" 
+                        style={{ width: `${(node.confidence ?? 0) * 100}%`, transition: "width 0.5s ease-out" }}
+                      />
+                    </div>
                   </div>
                 </motion.div>
               );

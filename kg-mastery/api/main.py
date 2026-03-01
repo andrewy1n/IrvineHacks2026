@@ -262,7 +262,19 @@ def list_courses(
     db: Session = Depends(get_db),
 ):
     courses = db.query(Course).filter(Course.user_id == user_id).all()
-    return [{"id": c.id, "name": c.name, "created_at": str(c.created_at)} for c in courses]
+    result = []
+    for c in courses:
+        nodes = db.query(ConceptNode).filter(ConceptNode.course_id == c.id).all()
+        mastery = 0
+        if nodes:
+            mastery = round((sum(n.confidence for n in nodes) / len(nodes)) * 100)
+        result.append({
+            "id": c.id, 
+            "name": c.name, 
+            "created_at": str(c.created_at),
+            "masteryPercentage": mastery
+        })
+    return result
 
 
 @app.post("/api/courses")
@@ -560,6 +572,43 @@ def get_solved_problems(
             "user_answer": r.user_answer,
             "eval_result": r.eval_result,
             "created_at": str(r.created_at),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/api/courses/{course_id}/solved")
+def get_course_solved_problems(
+    course_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Return all solved problems for a course, along with concept labels."""
+    course = db.query(Course).filter(Course.id == course_id, Course.user_id == user_id).first()
+    if not course:
+        raise HTTPException(status_code=403, detail="Not your course")
+    
+    rows = (
+        db.query(SolvedProblem, ConceptNode.label)
+        .join(ConceptNode, SolvedProblem.concept_id == ConceptNode.id)
+        .filter(ConceptNode.course_id == course_id, SolvedProblem.user_id == user_id)
+        .order_by(SolvedProblem.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    
+    return [
+        {
+            "id": r.SolvedProblem.id,
+            "concept_id": r.SolvedProblem.concept_id,
+            "mappedNode": r.label,
+            "question": r.SolvedProblem.question,
+            "options": json.loads(r.SolvedProblem.options) if r.SolvedProblem.options else [],
+            "correct_answer": r.SolvedProblem.correct_answer,
+            "user_answer": r.SolvedProblem.user_answer,
+            "eval_result": r.SolvedProblem.eval_result,
+            "score": 100 if r.SolvedProblem.eval_result == "correct" else 50 if r.SolvedProblem.eval_result == "partial" else 0,
+            "submittedAt": str(r.SolvedProblem.created_at),
         }
         for r in rows
     ]

@@ -74,6 +74,7 @@ export default function NodeDrawer() {
   const resources = useNebulaStore((s) => s.resources);
   const resourcesLoading = useNebulaStore((s) => s.resourcesLoading);
   const pollLoading = useNebulaStore((s) => s.pollLoading);
+  const pollModalOpen = useNebulaStore((s) => s.pollModalOpen);
   const generatePoll = useNebulaStore((s) => s.generatePoll);
   const updateMasteryDelta = useNebulaStore((s) => s.updateMasteryDelta);
   const solvedProblems = useNebulaStore((s) => s.solvedProblems);
@@ -83,13 +84,16 @@ export default function NodeDrawer() {
 
   if (!node) return null;
 
-  let badgeText = "⚪ Unseen";
+  let badgeText = "⚪ Not Started";
   let badgeClass = "bg-white/10 text-white border-white/20";
   if (node.confidence > 0 && node.confidence < 0.4) {
-    badgeText = "🔴 Struggling";
+    badgeText = "🔴 Developing";
     badgeClass = "bg-red-500/20 text-red-100 border-red-500/40";
-  } else if (node.confidence >= 0.4 && node.confidence < 0.7) {
-    badgeText = "🟡 Exposed";
+  } else if (node.confidence >= 0.4 && node.confidence < 0.55) {
+    badgeText = "🟠 Building";
+    badgeClass = "bg-orange-500/20 text-orange-100 border-orange-500/40";
+  } else if (node.confidence >= 0.55 && node.confidence < 0.7) {
+    badgeText = "🟡 On Track";
     badgeClass = "bg-yellow-500/20 text-yellow-100 border-yellow-500/40";
   } else if (node.confidence >= 0.7) {
     badgeText = "🟢 Mastered";
@@ -97,14 +101,23 @@ export default function NodeDrawer() {
   }
 
   return (
-    <Sheet open={!!selectedNode} onOpenChange={(open) => !open && selectNode(null)}>
-      <SheetContent className="flex flex-col border-white/20 bg-black/40 p-0 text-zinc-100 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-3xl sm:max-w-md">
+    <Sheet open={!!selectedNode} modal={!pollModalOpen} onOpenChange={(open) => { if (!open && !pollModalOpen) selectNode(null); }}>
+      <SheetContent
+        onInteractOutside={(e) => { if (pollModalOpen) e.preventDefault(); }}
+        onPointerDownOutside={(e) => { if (pollModalOpen) e.preventDefault(); }}
+        className="flex flex-col border-white/20 bg-black/40 p-0 text-zinc-100 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-3xl sm:max-w-md"
+      >
         <div className="flex-1 overflow-y-auto p-8">
           <SheetHeader className="mb-8 space-y-4">
-            <div
-              className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-medium tracking-wide shadow-inner ${badgeClass}`}
-            >
-              {badgeText}
+            <div className="flex items-center gap-3">
+              <div
+                className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-medium tracking-wide shadow-inner ${badgeClass}`}
+              >
+                {badgeText}
+              </div>
+              <span className="text-sm font-medium text-white/70 tracking-wide">
+                {Math.round((node.confidence ?? 0) * 100)}% Mastered
+              </span>
             </div>
             <SheetTitle className="text-3xl font-medium tracking-wide uppercase text-white">
               {node.label}
@@ -197,38 +210,6 @@ export default function NodeDrawer() {
             )}
             Generate Question
           </Button>
-
-          <div className="space-y-3">
-            <p className="text-center text-[10px] font-medium uppercase tracking-widest text-white/40">
-              Dev Controls
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 border border-white/10 bg-white/[0.02] text-xs font-medium text-white hover:border-white/40 hover:bg-white/20 hover:text-white backdrop-blur-sm transition-all"
-                onClick={() => updateMasteryDelta(node.id, 0.5)}
-              >
-                +0.5
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 border border-white/10 bg-white/[0.02] text-xs font-medium text-yellow-400 hover:border-yellow-500/40 hover:bg-yellow-500/20 hover:text-yellow-300 backdrop-blur-sm transition-all"
-                onClick={() => updateMasteryDelta(node.id, 0.2)}
-              >
-                +0.2
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 border border-white/10 bg-white/[0.02] text-xs font-medium text-red-400 hover:border-red-500/40 hover:bg-red-500/20 hover:text-red-300 backdrop-blur-sm transition-all"
-                onClick={() => updateMasteryDelta(node.id, -0.2)}
-              >
-                -0.2
-              </Button>
-            </div>
-          </div>
         </div>
       </SheetContent>
     </Sheet>
