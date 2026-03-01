@@ -4,7 +4,7 @@
   const OPENSTAX_HISTORY_KEY = "openstax_reading_history";
   const OPENSTAX_SECTION_VIEWED_KEY = "openstax_section_viewed";
   const SECTION_MASTERY_VIEWED_KEY = "section_mastery_sectionsViewed";
-  const SECTION_MASTERY_CONCEPT_KEY = "section_mastery_lastConceptId";
+  const SECTION_MASTERY_CONCEPT_KEY = "section_mastery_lastConceptLabel";
   const CLASSIFY_RESULT_KEY = "classify_last_result";
   const STUDY_MODE_KEY = "study_mode";
   const SECTIONS_REQUIRED_FOR_BOOST = 3;
@@ -165,20 +165,20 @@
               [CLASSIFY_RESULT_KEY, SECTION_MASTERY_VIEWED_KEY, SECTION_MASTERY_CONCEPT_KEY],
               (data) => {
                 const result = data[CLASSIFY_RESULT_KEY];
-                const nodeId = result && result.nodeId;
+                const nodeLabel = result && result.nodeLabel;
                 let viewed = typeof data[SECTION_MASTERY_VIEWED_KEY] === "number" ? data[SECTION_MASTERY_VIEWED_KEY] : 0;
-                const lastConceptId = data[SECTION_MASTERY_CONCEPT_KEY];
-                if (lastConceptId !== nodeId) viewed = 0;
+                const lastConceptLabel = data.section_mastery_lastConceptLabel;
+                if (lastConceptLabel !== nodeLabel) viewed = 0;
                 viewed += 1;
                 const payload = {
                   [SECTION_MASTERY_VIEWED_KEY]: viewed,
-                  [SECTION_MASTERY_CONCEPT_KEY]: nodeId || lastConceptId || "",
+                  section_mastery_lastConceptLabel: nodeLabel || lastConceptLabel || "",
                   [OPENSTAX_SECTION_VIEWED_KEY]: false,
                 };
                 chrome.storage.local.set(payload, () => {
                   console.log("[OpenStax Sections] sections viewed=" + viewed + " (wrote to storage)");
-                  if (viewed >= SECTIONS_REQUIRED_FOR_BOOST && nodeId) {
-                    chrome.runtime.sendMessage({ type: "APPLY_MASTERY_BOOST", nodeId }, () => {});
+                  if (viewed >= SECTIONS_REQUIRED_FOR_BOOST && nodeLabel) {
+                    chrome.runtime.sendMessage({ type: "APPLY_MASTERY_BOOST", nodeLabel }, () => {});
                   }
                 });
               }

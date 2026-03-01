@@ -1675,7 +1675,7 @@
                 nodeLabel: label,
                 confidence: matched && typeof matched.confidence === "number" ? matched.confidence : null,
               };
-              safeStorageSet({ [CLASSIFY_RESULT_KEY]: payload, section_mastery_lastConceptId: nodeId === PROBLEMS_NODE_ID ? null : nodeId });
+              safeStorageSet({ [CLASSIFY_RESULT_KEY]: payload, section_mastery_lastConceptLabel: label === PROBLEMS_LABEL ? null : label });
               if (sidebarHost && sidebarHost.updateClassifyResult) {
                 clearClassifyTimeout();
                 sidebarHost.updateClassifyResult(payload);
@@ -1683,10 +1683,10 @@
               return;
             }
             if (sidebarHost && sidebarHost.updateClassifyResult) {
-              sidebarHost.updateClassifyResult({ message: "Classifying…", pending: true });
-              startClassifyTimeout();
+              // sidebarHost.updateClassifyResult({ message: "Classifying…", pending: true });
+              // startClassifyTimeout();
             }
-            triggerAutoClassify(newValue);
+            // triggerAutoClassify(newValue);
           });
         }, 600);
       }
@@ -1745,4 +1745,11 @@
       }
     });
   });
+
+  // Run once on initial load
+  setTimeout(function() {
+    if (document.visibilityState === "visible") {
+      applyConceptFromUrlIfCached();
+    }
+  }, 1000);
 })();

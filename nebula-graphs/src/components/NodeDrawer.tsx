@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useNebulaStore } from "@/store/nebulaStore";
 import type { SolvedProblem } from "@/lib/types";
 import { apiFetch } from "@/lib/utils";
@@ -92,6 +93,7 @@ export default function NodeDrawer() {
   
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const transcriptRef = useRef("");
   const [submittingFeynman, setSubmittingFeynman] = useState(false);
   const recognitionRef = useRef<any>(null);
 
@@ -99,6 +101,7 @@ export default function NodeDrawer() {
       setWrittenQuestion("");
       setWrittenAnswer("");
       setTranscript("");
+      transcriptRef.current = "";
       setIsRecording(false);
       if (recognitionRef.current) {
           try { recognitionRef.current.stop(); } catch (e) {}
@@ -136,6 +139,7 @@ export default function NodeDrawer() {
           setIsRecording(false);
       } else {
           setTranscript("");
+          transcriptRef.current = "";
           // @ts-ignore
           const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
           if (SpeechRecognition) {
@@ -148,6 +152,7 @@ export default function NodeDrawer() {
                       currentTranscript += event.results[i][0].transcript;
                   }
                   setTranscript(currentTranscript);
+                  transcriptRef.current = currentTranscript;
               };
               recognition.onend = () => {
                   setIsRecording(false);
@@ -162,13 +167,13 @@ export default function NodeDrawer() {
   };
 
   const handleSubmitFeynman = async () => {
-      if (!selectedNode || !transcript.trim()) return;
+      const finalTranscript = transcriptRef.current;
+      if (!selectedNode || !finalTranscript.trim()) return;
       if (isRecording && recognitionRef.current) {
           recognitionRef.current.stop();
-          setIsRecording(false);
       }
       setSubmittingFeynman(true);
-      await submitFeynman(selectedNode.id, transcript);
+      await submitFeynman(selectedNode.id, finalTranscript);
       
       // Check if it reached 1.0 after submission
       const updatedNode = useNebulaStore.getState().selectedNode;
@@ -182,7 +187,9 @@ export default function NodeDrawer() {
       }
       
       setSubmittingFeynman(false);
+      setIsRecording(false);
       setTranscript("");
+      transcriptRef.current = "";
   };
 
   const node = selectedNode;
@@ -212,8 +219,8 @@ export default function NodeDrawer() {
   return (
     <Sheet open={!!selectedNode} modal={!pollModalOpen} onOpenChange={(open) => { if (!open && !pollModalOpen) selectNode(null); }}>
       <SheetContent
-        onInteractOutside={(e) => { if (pollModalOpen) e.preventDefault(); }}
-        onPointerDownOutside={(e) => { if (pollModalOpen) e.preventDefault(); }}
+        onInteractOutside={(e) => { if (pollModalOpen || isRecording) e.preventDefault(); }}
+        onPointerDownOutside={(e) => { if (pollModalOpen || isRecording) e.preventDefault(); }}
         className="flex flex-col border-white/20 bg-black/40 p-0 text-zinc-100 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-3xl sm:max-w-md"
       >
         <div className="flex-1 overflow-y-auto p-8">
@@ -416,34 +423,161 @@ export default function NodeDrawer() {
               {/* Show recording UI if not mastered, OR if user wants to try again (indicated by interaction) */}
               {(conf < 1.0 || isRecording || transcript) && (
                   <>
-                      <div className="relative h-48 rounded-xl overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center">
-                        <Spline scene="/assets/rememberall_robot.spline" className="w-full h-full" />
-                        {isRecording && (
-                           <div className="absolute top-3 right-3 flex items-center gap-2 bg-red-500/20 text-red-200 px-2 py-1 rounded-full border border-red-500/30 text-xs animate-pulse">
-                             <div className="w-2 h-2 rounded-full bg-red-500" />
-                             Recording
-                           </div>
-                        )}
-                      </div>
-                      <div className="bg-black/20 border border-white/10 rounded-lg p-3 min-h-[60px] max-h-[120px] overflow-y-auto text-sm text-white/80">
-                        {transcript || <span className="text-white/30 italic">Start speaking to explain this concept...</span>}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          className={`flex-1 h-10 ${isRecording ? 'bg-red-500/50 hover:bg-red-500/60 text-white' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'}`}
-                          onClick={toggleRecording}
+                      {isRecording && typeof window !== "undefined" && createPortal(
+                        <div 
+                          className="fixed inset-0 z-[9999] bg-black/90 flex flex-col items-center justify-center backdrop-blur-md"
                         >
-                          {isRecording ? <Square className="w-4 h-4 mr-2 fill-current" /> : <Mic className="w-4 h-4 mr-2" />}
-                          {isRecording ? "Stop Recording" : "Start Speaking"}
-                        </Button>
-                        <Button
-                          className="h-10 bg-emerald-600/50 hover:bg-emerald-500/60 text-white w-24"
-                          onClick={handleSubmitFeynman}
-                          disabled={submittingFeynman || !transcript.trim()}
-                        >
-                          {submittingFeynman ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit"}
-                        </Button>
-                      </div>
+                          <div 
+                            className="absolute inset-0 cursor-pointer" 
+                            onClick={() => {
+                              if (recognitionRef.current) {
+                                try { recognitionRef.current.stop(); } catch (err) {}
+                              }
+                              setIsRecording(false);
+                              setTranscript("");
+                              transcriptRef.current = "";
+                            }}
+                          />
+                          <div className="w-full h-[70vh] max-w-5xl relative pointer-events-none z-10">
+                            <div className="absolute top-8 left-8 pointer-events-auto">
+                              <Button 
+                                variant="ghost" 
+                                className="text-white/50 hover:text-white border border-white/10 hover:bg-white/10 bg-black/40 rounded-full px-6 text-sm"
+                                onClick={() => {
+                                  if (recognitionRef.current) {
+                                    try { recognitionRef.current.stop(); } catch (err) {}
+                                  }
+                                  setIsRecording(false);
+                                  setTranscript("");
+                                  transcriptRef.current = "";
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                            <div className="w-full h-full pointer-events-auto">
+                            <Spline 
+                              scene="/assets/rememberall_robot.spline" 
+                              className="w-full h-full" 
+                              onLoad={(spline) => {
+                                // Simulate a click to trigger the "look at cursor" interaction
+                                setTimeout(() => {
+                                  if (spline && spline._canvas) {
+                                    const rect = spline._canvas.getBoundingClientRect();
+                                    const x = rect.left + rect.width / 2;
+                                    const y = rect.top + rect.height / 2;
+                                    
+                                    const mousedown = new MouseEvent('mousedown', {
+                                      view: window,
+                                      bubbles: true,
+                                      cancelable: true,
+                                      clientX: x,
+                                      clientY: y
+                                    });
+                                    spline._canvas.dispatchEvent(mousedown);
+
+                                    const mouseup = new MouseEvent('mouseup', {
+                                      view: window,
+                                      bubbles: true,
+                                      cancelable: true,
+                                      clientX: x,
+                                      clientY: y
+                                    });
+                                    spline._canvas.dispatchEvent(mouseup);
+
+                                    const click = new MouseEvent('click', {
+                                      view: window,
+                                      bubbles: true,
+                                      cancelable: true,
+                                      clientX: x,
+                                      clientY: y
+                                    });
+                                    spline._canvas.dispatchEvent(click);
+                                    
+                                    // Also try calling emitEvent directly if the spline app supports it
+                                    try {
+                                        // @ts-ignore
+                                        if (spline.emitEvent) spline.emitEvent('mouseDown');
+                                    } catch (e) {}
+                                  }
+                                }, 500);
+                              }}
+                            />
+                            </div>
+                            {submittingFeynman ? (
+                              <div className="absolute top-8 right-8 flex items-center gap-2 bg-yellow-500/20 text-yellow-200 px-4 py-2 rounded-full border border-yellow-500/30 text-sm pointer-events-auto">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                Processing
+                              </div>
+                            ) : (
+                              <div className="absolute top-8 right-8 flex items-center gap-2 bg-red-500/20 text-red-200 px-4 py-2 rounded-full border border-red-500/30 text-sm animate-pulse pointer-events-auto">
+                                <div className="w-3 h-3 rounded-full bg-red-500" />
+                                Recording
+                              </div>
+                            )}
+                          </div>
+                          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-6 w-full max-w-2xl px-6 pointer-events-auto z-20">
+                            <div className="bg-black/60 border border-white/20 rounded-xl p-6 w-full min-h-[100px] max-h-[200px] overflow-y-auto text-center text-lg text-white/90 backdrop-blur-xl shadow-2xl">
+                              {transcript || <span className="text-white/40 italic">Listening to your explanation...</span>}
+                            </div>
+                            <Button
+                              size="lg"
+                              className={`h-16 rounded-full text-white border px-8 text-lg flex items-center gap-3 shadow-[0_0_30px_rgba(239,68,68,0.3)] ${
+                                submittingFeynman 
+                                  ? 'bg-red-900/50 border-red-900/50 cursor-not-allowed opacity-80' 
+                                  : 'bg-red-500/50 hover:bg-red-500/60 border-red-500/50 animate-pulse'
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (submittingFeynman) return;
+                                if (transcriptRef.current.trim()) {
+                                  handleSubmitFeynman();
+                                } else {
+                                  toggleRecording();
+                                }
+                              }}
+                              disabled={submittingFeynman}
+                            >
+                              {submittingFeynman ? (
+                                <>
+                                  <Loader2 className="w-6 h-6 animate-spin" />
+                                  Processing Answer...
+                                </>
+                              ) : (
+                                <>
+                                  <Square className="w-6 h-6 fill-current" />
+                                  Stop Recording
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>,
+                        document.body
+                      )}
+
+                      {!isRecording && (
+                        <>
+                          <div className="bg-black/20 border border-white/10 rounded-lg p-3 min-h-[60px] max-h-[120px] overflow-y-auto text-sm text-white/80 mb-4">
+                            {transcript || <span className="text-white/30 italic">Start speaking to explain this concept...</span>}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              className="flex-1 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                              onClick={toggleRecording}
+                            >
+                              <Mic className="w-4 h-4 mr-2" />
+                              {transcript ? "Retry Speaking" : "Start Speaking"}
+                            </Button>
+                            <Button
+                              className="h-10 bg-emerald-600/50 hover:bg-emerald-500/60 text-white w-24"
+                              onClick={handleSubmitFeynman}
+                              disabled={submittingFeynman || !transcript.trim()}
+                            >
+                              {submittingFeynman ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit"}
+                            </Button>
+                          </div>
+                        </>
+                      )}
                   </>
               )}
             </div>

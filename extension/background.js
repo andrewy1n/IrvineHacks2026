@@ -17,6 +17,7 @@ function getBackendToken() {
 const SOLVE_SYNC_PROBLEMS_KEY = "solveSync_problems";
 const SOLVE_SYNC_PROBLEMS_MAX = 100;
 const PROBLEMS_NODE_ID = "__problems__";
+const PROBLEMS_LABEL = "Problems";
 
 function callGemini(apiKey, question, answer, options) {
   options = options || {};
@@ -192,12 +193,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FETCH_KG_LABELS") {
     (async () => {
       const token = await getBackendToken();
-      const courseId = msg.courseId || (await chrome.storage.local.get(["activeCourseId"])).activeCourseId;
+      let courseId = msg.courseId || (await chrome.storage.local.get(["activeCourseId"])).activeCourseId;
       if (!token || !courseId) return { error: "NOT_CONFIGURED" };
       try {
-        const res = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+        let res = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
           headers: { Authorization: `Bearer ${token}` },
         });
+        
+        if (!res.ok && (res.status === 404 || res.status === 403)) {
+          console.log("[SolveSync] FETCH_KG_LABELS: active course invalid, fetching latest course...");
+          const coursesRes = await fetch(`${API_BASE}/api/courses`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (coursesRes.ok) {
+            const courses = await coursesRes.json();
+            if (courses.length > 0) {
+              courses.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+              courseId = courses[0].id;
+              await chrome.storage.local.set({ activeCourseId: courseId });
+              console.log("[SolveSync] Auto-switched to latest course:", courseId);
+              res = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+            }
+          }
+        }
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const graph = await res.json();
         const labels = (graph.nodes || []).map((n) => ({
@@ -239,9 +260,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "APPLY_MASTERY_BOOST") {
     (async () => {
       const token = await getBackendToken();
-      const nodeId = msg.nodeId;
-      if (!token || !nodeId) return { error: "NOT_CONFIGURED" };
+      let nodeId = msg.nodeId;
+      const nodeLabel = msg.nodeLabel;
+      if (!token) return { error: "NOT_CONFIGURED" };
+      
+      if (nodeLabel) {
+         // Fetch the correct node ID by name from the current graph
+         const { kg_labels } = await chrome.storage.local.get(["kg_labels"]);
+         if (kg_labels) {
+           const matched = kg_labels.find(n => n.label && n.label.toLowerCase() === nodeLabel.toLowerCase());
+           if (matched) nodeId = matched.id;
+         }
+      }
+      
+      if (!nodeId) {
+        console.warn("[SolveSync] Mastery boost aborted: Node not found in graph by name", nodeLabel);
+        return { error: "NODE_NOT_FOUND" };
+      }
+
       try {
+        console.log("[SolveSync] Sending PUT request for mastery boost to:", `${API_BASE}/api/mastery/${nodeId}`);
         const res = await fetch(`${API_BASE}/api/mastery/${nodeId}`, {
           method: "PUT",
           headers: {
@@ -250,17 +288,73 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           },
           body: JSON.stringify({ delta: MASTERY_BOOST_DELTA }),
         });
+        console.log("[SolveSync] PUT mastery for boost status:", res.status);
+        
+        // Ensure res.json() succeeds by awaiting it early, since FastAPI might return simple JSON
+        let payload;
+        try {
+          payload = await res.json();
+        } catch (e) {
+          console.warn("[SolveSync] Could not parse mastery boost response as JSON", e);
+        }
+        
         if (res.ok) {
           await chrome.storage.local.set({ [SECTION_MASTERY_VIEWED_KEY]: 0 });
-          const payload = await res.json();
           const current = await chrome.storage.local.get([CLASSIFY_RESULT_KEY]);
           const prev = current[CLASSIFY_RESULT_KEY];
-          if (prev && prev.nodeId === nodeId) {
+          if (prev && prev.nodeLabel === nodeLabel && payload && typeof payload.confidence === 'number') {
             await chrome.storage.local.set({
               [CLASSIFY_RESULT_KEY]: { ...prev, confidence: payload.confidence },
             });
           }
-          return { ok: true };
+          return { ok: true, confidence: payload ? payload.confidence : undefined };
+        } else if (res.status === 404) {
+          // If the node doesn't exist anymore, clear the cache and reset sections
+          await chrome.storage.local.set({ [SECTION_MASTERY_VIEWED_KEY]: 0 });
+          console.warn("[SolveSync] Mastery boost 404 - Node not found. Clearing cached result and fetching new labels.");
+          await chrome.storage.local.remove([CLASSIFY_RESULT_KEY]);
+          
+          // Auto-refresh kg_labels and fallback to latest course if needed
+          let courseId = (await chrome.storage.local.get(["activeCourseId"])).activeCourseId;
+          if (courseId) {
+            try {
+               let graphRes = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                 headers: { Authorization: `Bearer ${token}` }
+               });
+               
+               if (!graphRes.ok && (graphRes.status === 404 || graphRes.status === 403)) {
+                 console.log("[SolveSync] Current active course is invalid, fetching latest course...");
+                 const coursesRes = await fetch(`${API_BASE}/api/courses`, {
+                   headers: { Authorization: `Bearer ${token}` }
+                 });
+                 if (coursesRes.ok) {
+                   const courses = await coursesRes.json();
+                   if (courses.length > 0) {
+                     courses.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                     courseId = courses[0].id;
+                     await chrome.storage.local.set({ activeCourseId: courseId });
+                     console.log("[SolveSync] Auto-switched to latest course:", courseId);
+                     graphRes = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                       headers: { Authorization: `Bearer ${token}` }
+                     });
+                   }
+                 }
+               }
+
+               if (graphRes.ok) {
+                 const graph = await graphRes.json();
+                 const labels = (graph.nodes || []).map((n) => ({
+                   id: n.id, label: n.label, description: n.description, concept_type: n.concept_type, confidence: n.confidence
+                 }));
+                 await chrome.storage.local.set({ kg_labels: labels });
+                 console.log("[SolveSync] Successfully refreshed kg_labels after 404.");
+               }
+            } catch (err) {
+               console.error("Failed to auto-refresh kg_labels:", err);
+            }
+          }
+          
+          return { error: `HTTP ${res.status} (Node not found. Auto-refreshing knowledge graph.)` };
         }
         return { error: `HTTP ${res.status}` };
       } catch (e) {
@@ -273,13 +367,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "UPDATE_MASTERY") {
     (async () => {
       const token = await getBackendToken();
-      if (!token || !msg.conceptId) return { error: "NOT_CONFIGURED" };
+      let conceptId = msg.conceptId;
+      if (msg.nodeLabel && !conceptId) {
+        const { kg_labels } = await chrome.storage.local.get(["kg_labels"]);
+        if (kg_labels) {
+          const matched = kg_labels.find(n => n.label && n.label.toLowerCase() === msg.nodeLabel.toLowerCase());
+          if (matched) conceptId = matched.id;
+        }
+      }
+      if (!token || !conceptId) return { error: "NOT_CONFIGURED_OR_NODE_NOT_FOUND" };
       const evalResult = msg.evalResult;
       const delta = msg.delta;
       if (evalResult == null && (delta == null || typeof delta !== "number")) return { error: "MISSING_EVAL_RESULT_OR_DELTA" };
       const body = delta != null ? { delta } : { eval_result: evalResult };
       try {
-        const res = await fetch(`${API_BASE}/api/mastery/${msg.conceptId}`, {
+        const res = await fetch(`${API_BASE}/api/mastery/${conceptId}`, {
           method: "PUT",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -287,6 +389,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           },
           body: JSON.stringify(body),
         });
+        
+        if (res.status === 404 || res.status === 403) {
+          console.warn(`[SolveSync] Update mastery ${res.status} - Node/Course not found. Auto-refreshing...`);
+          let courseId = (await chrome.storage.local.get(["activeCourseId"])).activeCourseId;
+          if (courseId) {
+            try {
+               let graphRes = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                 headers: { Authorization: `Bearer ${token}` }
+               });
+               if (!graphRes.ok && (graphRes.status === 404 || graphRes.status === 403)) {
+                 const coursesRes = await fetch(`${API_BASE}/api/courses`, {
+                   headers: { Authorization: `Bearer ${token}` }
+                 });
+                 if (coursesRes.ok) {
+                   const courses = await coursesRes.json();
+                   if (courses.length > 0) {
+                     courses.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                     courseId = courses[0].id;
+                     await chrome.storage.local.set({ activeCourseId: courseId });
+                     graphRes = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                       headers: { Authorization: `Bearer ${token}` }
+                     });
+                   }
+                 }
+               }
+               if (graphRes.ok) {
+                 const graph = await graphRes.json();
+                 const labels = (graph.nodes || []).map((n) => ({
+                   id: n.id, label: n.label, description: n.description, concept_type: n.concept_type, confidence: n.confidence
+                 }));
+                 await chrome.storage.local.set({ kg_labels: labels });
+               }
+            } catch (err) {}
+          }
+          throw new Error(`HTTP ${res.status} (Node/Course not found. Auto-refreshing knowledge graph.)`);
+        }
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         return { concept_id: data.concept_id, confidence: data.confidence };
@@ -307,9 +446,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     try {
       const token = await getBackendToken();
-      const { kg_labels: kgLabels, classify_last_result: classifyResult, section_mastery_lastConceptId: sectionConceptId } = await chrome.storage.local.get(["kg_labels", "classify_last_result", "section_mastery_lastConceptId"]);
-      const pageConceptId = (classifyResult && classifyResult.nodeId) || sectionConceptId || null;
-      const pageConceptLabel = (classifyResult && classifyResult.label) || (kgLabels && pageConceptId && kgLabels.find((n) => n.id === pageConceptId)?.label) || null;
+      const { kg_labels: kgLabels, classify_last_result: classifyResult, section_mastery_lastConceptLabel: sectionConceptLabel } = await chrome.storage.local.get(["kg_labels", "classify_last_result", "section_mastery_lastConceptLabel"]);
+      const pageConceptLabel = (classifyResult && classifyResult.nodeLabel) || sectionConceptLabel || null;
+      let pageConceptId = null;
+      if (pageConceptLabel) {
+        const matched = kgLabels && kgLabels.find(n => n.label && n.label.toLowerCase() === pageConceptLabel.toLowerCase());
+        if (matched) pageConceptId = matched.id;
+      }
+      if (classifyResult && classifyResult.nodeLabel === PROBLEMS_LABEL) {
+        pageConceptId = PROBLEMS_NODE_ID;
+      }
 
       console.log("[SolveSync] Calling Gemini...");
       const result = await callGemini(apiKey, msg.question, msg.answer, { kgLabels: kgLabels || [] });
@@ -342,6 +488,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (token && conceptId && conceptId !== PROBLEMS_NODE_ID) {
         const evalResult = score >= 85 ? "correct" : score >= 50 ? "partial" : "wrong";
         console.log("[SolveSync] Updating mastery:", { conceptId, evalResult });
+        let masteryStatus = null;
         try {
           const masteryUrl = `${API_BASE}/api/mastery/${conceptId}`;
           console.log("[SolveSync] Saving mastery to API:", masteryUrl);
@@ -353,6 +500,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             },
             body: JSON.stringify({ eval_result: evalResult }),
           });
+          masteryStatus = putRes.status;
           console.log("[SolveSync] PUT mastery status:", putRes.status);
           if (putRes.ok) {
             const data = await putRes.json();
@@ -362,6 +510,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (e) {
           console.error("[SolveSync] PUT mastery failed:", e);
         }
+        
+        if (masteryStatus === 404 || masteryStatus === 403) {
+          console.warn("[SolveSync] Update mastery 404/403 - Node not found. Clearing cached result and fetching new labels.");
+          await chrome.storage.local.remove([CLASSIFY_RESULT_KEY]);
+          let courseId = (await chrome.storage.local.get(["activeCourseId"])).activeCourseId;
+          if (courseId) {
+            try {
+               let graphRes = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                 headers: { Authorization: `Bearer ${token}` }
+               });
+               
+               if (!graphRes.ok && (graphRes.status === 404 || graphRes.status === 403)) {
+                 const coursesRes = await fetch(`${API_BASE}/api/courses`, {
+                   headers: { Authorization: `Bearer ${token}` }
+                 });
+                 if (coursesRes.ok) {
+                   const courses = await coursesRes.json();
+                   if (courses.length > 0) {
+                     courses.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                     courseId = courses[0].id;
+                     await chrome.storage.local.set({ activeCourseId: courseId });
+                     graphRes = await fetch(`${API_BASE}/api/courses/${courseId}/graph`, {
+                       headers: { Authorization: `Bearer ${token}` }
+                     });
+                   }
+                 }
+               }
+
+               if (graphRes.ok) {
+                 const graph = await graphRes.json();
+                 const labels = (graph.nodes || []).map((n) => ({
+                   id: n.id, label: n.label, description: n.description, concept_type: n.concept_type, confidence: n.confidence
+                 }));
+                 await chrome.storage.local.set({ kg_labels: labels });
+               }
+            } catch (err) {}
+          }
+          response.error = `HTTP ${masteryStatus} (Node not found. Auto-refreshing knowledge graph.)`;
+        }
+
         const solvedUrl = `${API_BASE}/api/concepts/${conceptId}/solved`;
         console.log("[SolveSync] Saving solved problem to API:", solvedUrl);
         try {
@@ -414,7 +602,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 const OPENSTAX_SECTION_VIEWED_KEY = "openstax_section_viewed";
 const CLASSIFY_RESULT_KEY = "classify_last_result";
 const SECTION_MASTERY_VIEWED_KEY = "section_mastery_sectionsViewed";
-const SECTION_MASTERY_CONCEPT_KEY = "section_mastery_lastConceptId";
+const SECTION_MASTERY_CONCEPT_KEY = "section_mastery_lastConceptLabel";
 const SECTIONS_REQUIRED_FOR_BOOST = 3;
 const MASTERY_BOOST_DELTA = 0.05;
 
