@@ -7,6 +7,7 @@ Routes:
   POST /api/courses
   GET  /api/courses/{id}/graph
   POST /api/courses/{id}/upload
+  POST /api/dev/seed-graph/{course_id}
   PUT  /api/mastery/{concept_id}
   GET  /api/concepts/{id}/resources
   POST /api/concepts/{id}/poll
@@ -19,6 +20,7 @@ import re
 import time
 import uuid
 import hashlib
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -57,6 +59,15 @@ PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 
 # In-memory cache: SHA-256 of PDF text → extracted KG dict
 _kg_cache: dict[str, dict] = {}
+
+PREMADE_GRAPH_PATH = Path(__file__).resolve().parent.parent / "data" / "graph.json"
+
+
+def _load_premade_kg() -> dict:
+    if not PREMADE_GRAPH_PATH.exists():
+        raise FileNotFoundError(f"Premade graph not found: {PREMADE_GRAPH_PATH}")
+    with open(PREMADE_GRAPH_PATH, encoding="utf-8") as f:
+        return json.load(f)
 
 # ---------------------
 # Pydantic Schemas
@@ -354,6 +365,25 @@ def _persist_kg_to_course(kg: dict, course_id: str, db: Session):
     db.commit()
 
 
+@app.post("/api/dev/seed-graph/{course_id}")
+def seed_premade_graph(
+    course_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """One-off: inject the premade graph from data/graph.json into the given course."""
+    course = db.query(Course).filter(Course.id == course_id, Course.user_id == user_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    try:
+        kg = _load_premade_kg()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    kg = _ensure_connected_kg(kg)
+    _persist_kg_to_course(kg, course_id, db)
+    return get_course_graph(course_id, user_id, db)
+
+
 @app.post("/api/courses/{course_id}/upload")
 async def upload_pdf(
     course_id: str,
@@ -361,7 +391,7 @@ async def upload_pdf(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Upload PDF → hash-check cache → extract with LLM → persist graph."""
+    """Upload PDF → inject premade graph from data/graph.json (no LLM for now)."""
     course = db.query(Course).filter(Course.id == course_id, Course.user_id == user_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -377,26 +407,10 @@ async def upload_pdf(
     if not text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from PDF")
 
-    # Hash the extracted text for cache lookup
-    content_hash = hashlib.sha256(text.encode()).hexdigest()
-
-    if content_hash in _kg_cache:
-        print(f"[CACHE HIT] PDF hash {content_hash[:12]}… — skipping LLM call")
-        kg = _kg_cache[content_hash]
-    else:
-        # First N pages only (already truncated by extract_text_from_pdf)
-        # Truncate further to ~12000 chars to keep latency and cost down
-        truncated = text[:12000]
-        try:
-            raw = call_llm(EXTRACTION_PROMPT + truncated)
-            kg = parse_json_response(raw)
-            _kg_cache[content_hash] = kg  # cache for future uploads
-            print(f"[CACHE MISS] PDF hash {content_hash[:12]}… — LLM called, cached")
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=502, detail=f"Failed to parse LLM response: {e}")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"LLM API error: {e}")
-
+    try:
+        kg = _load_premade_kg()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     kg = _ensure_connected_kg(kg)
     _persist_kg_to_course(kg, course_id, db)
 

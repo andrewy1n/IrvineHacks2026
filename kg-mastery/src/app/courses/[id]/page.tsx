@@ -108,7 +108,7 @@ export default function CourseGraphPage() {
         [selectNode, graphData?.nodes]
     );
 
-    const MAX_DISPLAY_NODES = 10;
+    const MAX_DISPLAY_NODES = 60;
     const displayGraph = useMemo(() => {
         if (!graphData || graphData.nodes.length === 0) return null;
         if (graphData.nodes.length <= MAX_DISPLAY_NODES) return graphData;
