@@ -55,7 +55,7 @@ Student answer: ${answer.replace(/"/g, '\\"')}`;
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         responseMimeType: "application/json",
       },
     }),
@@ -73,8 +73,52 @@ Student answer: ${answer.replace(/"/g, '\\"')}`;
       let raw = text.trim();
       const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (m) raw = m[1].trim();
-      return JSON.parse(raw);
+      console.log("[SolveSync] Gemini raw response:", raw);
+      return parseGeminiJson(raw);
     });
+}
+
+function parseGeminiJson(raw) {
+  if (!raw || typeof raw !== "string") throw new Error("Empty or invalid response");
+  let s = raw.trim();
+  try {
+    return JSON.parse(s);
+  } catch (_) {}
+  s = s.replace(/,(\s*[}\]])/g, "$1");
+  try {
+    return JSON.parse(s);
+  } catch (_) {}
+  const start = s.indexOf("{");
+  if (start === -1) throw new Error("No JSON object in response");
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let end = -1;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (c === "\\") { escape = true; continue; }
+      if (c === '"') { inString = false; continue; }
+      continue;
+    }
+    if (c === '"') { inString = true; continue; }
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  if (end === -1) {
+    console.error("[SolveSync] parseGeminiJson failed – raw string:", s);
+    throw new Error("Response JSON was truncated or invalid");
+  }
+  try {
+    return JSON.parse(s.slice(start, end + 1));
+  } catch (e) {
+    console.error("[SolveSync] parseGeminiJson slice parse failed – raw string:", s);
+    throw new Error("Could not parse evaluation response: " + (e.message || "Invalid JSON"));
+  }
 }
 
 function resolveConceptIdFromLabel(mappedNodeLabel, kgLabels) {

@@ -12,7 +12,34 @@
 })();
 
 const CLASSIFY_PENDING_KEY = "classify_pending_text";
+const CLASSIFY_PENDING_URL_KEY = "classify_pending_url";
 const CLASSIFY_RESULT_KEY = "classify_last_result";
+const CLASSIFY_URL_CACHE_KEY = "classify_url_cache";
+const MAX_URL_CACHE_ENTRIES = 200;
+
+const URL_TO_CONCEPT_LABEL = {
+  "https://openstax.org/books/introduction-computer-science/pages/3-2-algorithm-design-and-discovery": "Algorithm Design",
+  "https://openstax.org/books/introduction-computer-science/pages/3-practice-exercises": "Problems",
+};
+
+function normalizeUrl(url) {
+  if (!url || typeof url !== "string") return "";
+  try {
+    const u = url.trim().replace(/#.*$/, "");
+    return u.endsWith("/") && u.length > 1 ? u.slice(0, -1) : u;
+  } catch (_) {
+    return url;
+  }
+}
+
+function capUrlCache(cache) {
+  const keys = Object.keys(cache);
+  if (keys.length <= MAX_URL_CACHE_ENTRIES) return cache;
+  const trimmed = {};
+  keys.slice(-MAX_URL_CACHE_ENTRIES).forEach((k) => { trimmed[k] = cache[k]; });
+  return trimmed;
+}
+
 const FALLBACK_CATEGORIES = [
   "Educational",
   "Quiz/Assessment",
@@ -60,17 +87,12 @@ function notifyAutoClassifyDone() {
 
 async function run() {
   try {
-  const items = await chrome.storage.local.get([CLASSIFY_PENDING_KEY, "kg_labels"]);
+  const items = await chrome.storage.local.get([CLASSIFY_PENDING_KEY, CLASSIFY_PENDING_URL_KEY, "kg_labels", CLASSIFY_URL_CACHE_KEY]);
   const text = items[CLASSIFY_PENDING_KEY];
+  const pendingUrl = items[CLASSIFY_PENDING_URL_KEY];
   const kgLabels = items.kg_labels;
-  await chrome.storage.local.remove(CLASSIFY_PENDING_KEY);
-
-  if (!text || text.length < 10) {
-    const msg = "No content to classify. In the extension popup, extract content (Refresh) then click Classify with AI.";
-    setStatus(msg, "error");
-    await chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: { message: msg, error: true } });
-    return;
-  }
+  let urlCache = items[CLASSIFY_URL_CACHE_KEY] && typeof items[CLASSIFY_URL_CACHE_KEY] === "object" ? items[CLASSIFY_URL_CACHE_KEY] : {};
+  await chrome.storage.local.remove([CLASSIFY_PENDING_KEY, CLASSIFY_PENDING_URL_KEY]);
 
   const useKgLabels = Array.isArray(kgLabels) && kgLabels.length > 0;
   const problemsOption = { id: PROBLEMS_NODE_ID, label: PROBLEMS_LABEL, description: PROBLEMS_DESCRIPTION };
@@ -88,6 +110,39 @@ async function run() {
     : [];
   if (!labelList) {
     const msg = "No labels loaded. In Options, log in to the backend, select a course, and click Refresh knowledge graph.";
+    setStatus(msg, "error");
+    await chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: { message: msg, error: true } });
+    return;
+  }
+
+  const normalizedUrl = normalizeUrl(pendingUrl);
+  const hardcodedLabel = normalizedUrl ? URL_TO_CONCEPT_LABEL[normalizedUrl] : null;
+  const cachedEntry = normalizedUrl ? urlCache[normalizedUrl] : null;
+  const urlDerivedLabel = hardcodedLabel || (cachedEntry && cachedEntry.label) || null;
+  if (urlDerivedLabel) {
+    const matchedNode = extendedKgLabels.find((n) => n.label && String(n.label).toLowerCase() === String(urlDerivedLabel).toLowerCase());
+    const nodeId = matchedNode ? matchedNode.id : (urlDerivedLabel === PROBLEMS_LABEL ? PROBLEMS_NODE_ID : null);
+    const resultMessage = "Concept: " + urlDerivedLabel;
+    setStatus("Done.", "done");
+    resultEl.textContent = resultMessage;
+    const payload = {
+      message: resultMessage,
+      error: false,
+      nodeId: nodeId || null,
+      nodeLabel: urlDerivedLabel,
+      confidence: matchedNode && typeof matchedNode.confidence === "number" ? matchedNode.confidence : null,
+    };
+    await chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: payload });
+    if (normalizedUrl) {
+      urlCache[normalizedUrl] = { label: urlDerivedLabel, nodeId: payload.nodeId };
+      await chrome.storage.local.set({ [CLASSIFY_URL_CACHE_KEY]: capUrlCache(urlCache) });
+    }
+    notifyAutoClassifyDone();
+    return;
+  }
+
+  if (!text || text.length < 10) {
+    const msg = "No content to classify. In the extension popup, extract content (Refresh) then click Classify with AI.";
     setStatus(msg, "error");
     await chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: { message: msg, error: true } });
     return;
@@ -220,6 +275,11 @@ async function run() {
       confidence: matchedNode && typeof matchedNode.confidence === "number" ? matchedNode.confidence : null,
     };
     await chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: payload });
+    if (pendingUrl && normalizedUrl) {
+      const cache = (await chrome.storage.local.get([CLASSIFY_URL_CACHE_KEY]))[CLASSIFY_URL_CACHE_KEY] || {};
+      cache[normalizedUrl] = { label: matchedLabel, nodeId: payload.nodeId };
+      await chrome.storage.local.set({ [CLASSIFY_URL_CACHE_KEY]: capUrlCache(cache) });
+    }
   } catch (e) {
     if (session) session.destroy();
     const errMsg = e.message === "Cancelled" ? "Cancelled." : "Classification failed: " + (e.message || e);
