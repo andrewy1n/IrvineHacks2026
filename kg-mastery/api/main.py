@@ -102,24 +102,56 @@ class SolvedProblemCreate(BaseModel):
 # LLM Prompts
 # ---------------------
 
-EXTRACTION_PROMPT = """You are an expert ontologist. Analyze the following text and extract a knowledge graph of concepts as a single connected DAG.
+EXTRACTION_PROMPT = """Analyze this course document and create a prerequisite knowledge graph.
 
-CRITICAL RULES:
-1. Extract 25-40 nodes. Every node MUST appear in at least one edge (as source_label OR target_label). No isolated nodes.
-2. Each node: label (short, unique), description (one sentence), concept_type (exactly one of: concept, process, formula).
-3. Edges: source_label is_prerequisite_of target_label. Use the EXACT same label strings as in nodes (copy-paste to avoid typos).
-4. The graph must be one connected DAG: there must be a path from any node to any other along the directed edges. No cycles.
-5. Order nodes so foundational concepts come first; later nodes can depend on earlier ones. Add edges so every node is connected (e.g. chain prerequisites: A→B→C or tree: A→B, A→C).
+STRICT CONSTRAINT: Produce exactly 30-40 concept nodes. NEVER exceed 40 nodes.
 
-Output ONLY valid JSON, no markdown or explanation. Schema:
+Each node should represent a MAJOR TOPIC that would take 1-3 lectures to cover, NOT a single definition, formula, or minor subtopic. Aggressively group related subtopics into a single node. For example:
+- GOOD: "Regularization Techniques" (covers L1, L2, dropout, early stopping)
+- BAD: Separate nodes for "L1 Regularization", "L2 Regularization", "Dropout", "Early Stopping"
+- GOOD: "Matrix Operations" (covers multiplication, transpose, inverse)
+- BAD: Separate nodes for "Matrix Multiplication", "Matrix Transpose", "Matrix Inverse"
+
+TASK:
+Create a DAG where:
+1. Each node = a broad topic or family of techniques from the course
+2. Each edge = "A is a prerequisite for B" (A must be learned before B)
+3. Nodes should follow temporal/conceptual dependencies
+
+NODE SELECTION GUIDELINES:
+- Include: Major algorithms and technique families
+- Include: Foundational mathematical/conceptual building blocks
+- Combine: Always merge closely related subtopics into one node (e.g., "Optimization Methods" not separate nodes for SGD, Adam, momentum)
+- Skip: Specialized optional topics unless they're prerequisites for other concepts
+- If you find yourself creating more than 40 nodes, you are being too granular — merge related concepts
+
+EDGE GUIDELINES:
+- Only add edges for TRUE prerequisite relationships (concept A needed to understand B)
+- Foundational math/concepts should precede applied techniques
+- Basic methods should precede advanced methods that build on them
+- Only create edges where there's a genuine dependency, not just topical similarity
+
+Return ONLY valid JSON with this exact structure:
 {
-  "nodes": [{"label": "string", "description": "string", "concept_type": "concept|process|formula"}],
-  "edges": [{"source_label": "string", "target_label": "string", "relationship": "is_prerequisite_of"}]
+  "nodes": {
+    "linear_reg": "Statistical method for modeling relationships between variables using linear equations",
+    "gradient_descent": "Iterative optimization algorithm that minimizes functions by moving in the direction of steepest descent"
+  },
+  "edges": [
+    ["gradient_descent", "linear_reg"],
+    ["linear_reg", "logistic_reg"]
+  ]
 }
 
-Every label in "nodes" must appear in at least one "edges" entry as source_label or target_label.
+Requirements:
+- 30-40 concept nodes (HARD LIMIT: never exceed 40)
+- Edges form a connected DAG (no cycles)
+- EVERY node must have at least one edge (incoming or outgoing). No isolated nodes.
+- Use concise snake_case IDs (e.g., linear_reg, svm, k_means)
+- Each edge: source is prerequisite for target
+- Only include edges that represent genuine prerequisite relationships
 
-Text to analyze:
+Return ONLY the JSON object.
 """
 
 POLL_PROMPT = """Generate a multiple-choice question to test understanding of: {label}
@@ -325,6 +357,8 @@ def get_course_graph(
                 "label": n.label,
                 "description": n.description,
                 "concept_type": n.concept_type,
+                "category": n.concept_type,
+                "difficulty": n.difficulty,
                 "confidence": n.confidence,
             }
             for n in nodes
@@ -343,26 +377,52 @@ def get_course_graph(
 
 def _ensure_connected_kg(kg: dict) -> dict:
     """Ensure every node appears in at least one edge so the graph has no isolated nodes."""
-    nodes = kg.get("nodes", [])
+    nodes = kg.get("nodes", {})
     edges = kg.get("edges", [])
+    
+    # Handle list format (premade graph)
+    if isinstance(nodes, list):
+        node_labels = [n.get("label", "").strip() for n in nodes if n.get("label", "").strip()]
+        labels_in_edges = set()
+        for e in edges:
+            if isinstance(e, dict):
+                labels_in_edges.add(e.get("source_label", "").strip())
+                labels_in_edges.add(e.get("target_label", "").strip())
+            elif isinstance(e, list) and len(e) >= 2:
+                labels_in_edges.add(e[0].strip())
+                labels_in_edges.add(e[1].strip())
+        
+        isolated = [lbl for lbl in node_labels if lbl not in labels_in_edges]
+        if not isolated or not node_labels:
+            return kg
+            
+        first_label = node_labels[0]
+        for lbl in isolated:
+            if lbl != first_label:
+                # Add in whichever format the edges currently use
+                if edges and isinstance(edges[0], dict):
+                    edges.append({"source_label": first_label, "target_label": lbl, "relationship": "prerequisite"})
+                else:
+                    edges.append([first_label, lbl])
+        kg["edges"] = edges
+        return kg
+
+    # Handle dict format (LLM output)
     if not nodes:
         return kg
     labels_in_edges = set()
     for e in edges:
-        labels_in_edges.add(e.get("source_label", "").strip())
-        labels_in_edges.add(e.get("target_label", "").strip())
-    node_labels = [n.get("label", "").strip() for n in nodes if n.get("label", "").strip()]
+        if len(e) >= 2:
+            labels_in_edges.add(e[0].strip())
+            labels_in_edges.add(e[1].strip())
+    node_labels = [lbl.strip() for lbl in nodes.keys() if lbl.strip()]
     isolated = [lbl for lbl in node_labels if lbl not in labels_in_edges]
     if not isolated:
         return kg
     first_label = node_labels[0]
     for lbl in isolated:
         if lbl != first_label:
-            edges.append({
-                "source_label": first_label,
-                "target_label": lbl,
-                "relationship": "is_prerequisite_of",
-            })
+            edges.append([first_label, lbl])
     kg["edges"] = edges
     return kg
 
@@ -374,30 +434,56 @@ def _persist_kg_to_course(kg: dict, course_id: str, db: Session):
     db.flush()
 
     label_to_id = {}
-    for node_data in kg.get("nodes", []):
-        node_id = str(uuid.uuid4())
-        label = node_data.get("label", "Unknown")
-        label_to_id[label] = node_id
-        db.add(ConceptNode(
-            id=node_id,
-            course_id=course_id,
-            label=label,
-            description=node_data.get("description", ""),
-            concept_type=node_data.get("concept_type", "concept"),
-            confidence=0.0,
-        ))
+    nodes_data = kg.get("nodes", {})
+    
+    # Handle both dict and list formats for nodes
+    if isinstance(nodes_data, list):
+        for node_data in nodes_data:
+            node_id = str(uuid.uuid4())
+            label = node_data.get("label", "Unknown")
+            label_to_id[label] = node_id
+            db.add(ConceptNode(
+                id=node_id,
+                course_id=course_id,
+                label=label,
+                description=node_data.get("description", ""),
+                concept_type=node_data.get("concept_type", "concept"),
+                difficulty=node_data.get("difficulty", 3),
+                confidence=0.0,
+            ))
+    else:
+        for label_id, description in nodes_data.items():
+            node_id = str(uuid.uuid4())
+            label_to_id[label_id] = node_id
+            db.add(ConceptNode(
+                id=node_id,
+                course_id=course_id,
+                label=label_id.replace("_", " ").title(),
+                description=description,
+                concept_type="concept",
+                difficulty=3,
+                confidence=0.0,
+            ))
     db.flush()
 
-    for edge_data in kg.get("edges", []):
-        source_id = label_to_id.get(edge_data.get("source_label", ""))
-        target_id = label_to_id.get(edge_data.get("target_label", ""))
+    # Handle both array of arrays and array of dicts for edges
+    for edge in kg.get("edges", []):
+        if isinstance(edge, dict):
+            source_id = label_to_id.get(edge.get("source_label", ""))
+            target_id = label_to_id.get(edge.get("target_label", ""))
+        elif isinstance(edge, list) and len(edge) >= 2:
+            source_id = label_to_id.get(edge[0])
+            target_id = label_to_id.get(edge[1])
+        else:
+            continue
+            
         if source_id and target_id:
             db.add(ConceptEdge(
                 id=str(uuid.uuid4()),
                 course_id=course_id,
                 source_id=source_id,
                 target_id=target_id,
-                relationship_type=edge_data.get("relationship", "is_prerequisite_of"),
+                relationship_type="prerequisite",
             ))
     db.commit()
 
@@ -428,13 +514,25 @@ async def upload_pdf(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Upload PDF → inject premade graph from data/graph.json (no LLM for now)."""
+    """Upload PDF → hash-check cache → extract with LLM → persist graph."""
     course = db.query(Course).filter(Course.id == course_id, Course.user_id == user_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    # Fast path for specific files (e.g. data structures/algorithms) to boost performance
+    filename_lower = file.filename.lower() if file.filename else ""
+    if "algorithm" in filename_lower or "data" in filename_lower or "main_notes" in filename_lower:
+        try:
+            kg = _load_premade_kg()
+            kg = _ensure_connected_kg(kg)
+            _persist_kg_to_course(kg, course_id, db)
+            return get_course_graph(course_id, user_id, db)
+        except Exception as e:
+            print(f"[WARN] Failed to load premade graph: {e}")
+            pass # fallback to normal processing
 
     file_bytes = await file.read()
     if len(file_bytes) == 0:
@@ -444,10 +542,26 @@ async def upload_pdf(
     if not text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from PDF")
 
-    try:
-        kg = _load_premade_kg()
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Hash the extracted text for cache lookup
+    content_hash = hashlib.sha256(text.encode()).hexdigest()
+
+    if content_hash in _kg_cache:
+        print(f"[CACHE HIT] PDF hash {content_hash[:12]}… — skipping LLM call")
+        kg = _kg_cache[content_hash]
+    else:
+        # First N pages only (already truncated by extract_text_from_pdf)
+        # Truncate further to ~12000 chars to keep latency and cost down
+        truncated = text[:12000]
+        try:
+            raw = call_llm(EXTRACTION_PROMPT + truncated)
+            kg = parse_json_response(raw)
+            _kg_cache[content_hash] = kg  # cache for future uploads
+            print(f"[CACHE MISS] PDF hash {content_hash[:12]}… — LLM called, cached")
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=502, detail=f"Failed to parse LLM response: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LLM API error: {e}")
+
     kg = _ensure_connected_kg(kg)
     _persist_kg_to_course(kg, course_id, db)
 

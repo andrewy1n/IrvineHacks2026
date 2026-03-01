@@ -52,6 +52,7 @@ class ConceptNode(Base):
     label = Column(String, nullable=False)
     description = Column(Text, default="")
     concept_type = Column(String, default="concept")  # concept | process | formula
+    difficulty = Column(Integer, default=3)
     confidence = Column(Float, default=0.0)
     course = relationship("Course", back_populates="nodes")
     resources = relationship("NodeResource", back_populates="concept_node", cascade="all, delete-orphan")
