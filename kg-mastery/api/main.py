@@ -9,6 +9,8 @@ Routes:
   POST /api/courses/{id}/upload
   POST /api/dev/seed-graph/{course_id}
   PUT  /api/mastery/{concept_id}
+  POST /api/concepts/{id}/solved
+  GET  /api/concepts/{id}/solved
   GET  /api/concepts/{id}/resources
   POST /api/concepts/{id}/poll
 """
@@ -32,7 +34,7 @@ from PyPDF2 import PdfReader
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from models import Base, engine, get_db, ConceptNode, ConceptEdge, Course, User
+from models import Base, engine, get_db, ConceptNode, ConceptEdge, Course, User, SolvedProblem, NodeResource
 from auth import hash_password, verify_password, create_token, get_current_user_id
 
 load_dotenv()
@@ -83,9 +85,18 @@ class CourseCreate(BaseModel):
 class MasteryUpdate(BaseModel):
     eval_result: Optional[str] = None  # "correct" | "partial" | "wrong"
     delta: Optional[float] = None
+    # Optional problem data for storing solved problems (solve + sync)
+    problem: Optional[dict] = None  # {question, options, correct_answer, user_answer}
 
 class PollAnswer(BaseModel):
     answer: str
+
+class SolvedProblemCreate(BaseModel):
+    question: str
+    options: list = []
+    correct_answer: str = ""
+    user_answer: str = ""
+    eval_result: str  # correct | partial | wrong
 
 # ---------------------
 # LLM Prompts
@@ -438,21 +449,107 @@ def update_mastery(
         raise HTTPException(status_code=403, detail="Not your course")
     
     current = node.confidence
-    
+
+    # Question-answer mastery: correct +0–10%, wrong -0–10%, partial +5%
+    # Reading passively (delta) can only increase mastery up to 30% max
     if req.eval_result:
         if req.eval_result == "correct":
-            node.confidence = max(current, 0.85)
+            node.confidence = min(1.0, current + 0.10)
         elif req.eval_result == "partial":
-            node.confidence = max(current, 0.50)
+            node.confidence = min(1.0, current + 0.05)
         elif req.eval_result == "wrong":
-            node.confidence = 0.20 if current == 0 else min(current, 0.20)
+            node.confidence = max(0.0, current - 0.10)
     elif req.delta is not None:
-        node.confidence = clamp(current + req.delta)
+        # Passive reading: cap at 30%
+        node.confidence = min(0.30, clamp(current + req.delta))
+
+    # Store solved problem for sync when problem data is provided
+    if req.problem and req.eval_result:
+        p = req.problem
+        print(f"[DEBUG] Saving solved problem: concept={concept_id}, eval={req.eval_result}, keys={list(p.keys())}")
+        if all(k in p for k in ("question", "options", "correct_answer", "user_answer")):
+            db.add(SolvedProblem(
+                id=str(uuid.uuid4()),
+                concept_id=concept_id,
+                user_id=user_id,
+                question=str(p.get("question", "")),
+                options=json.dumps(p.get("options", [])),
+                correct_answer=str(p.get("correct_answer", ""))[:500],
+                user_answer=str(p.get("user_answer", ""))[:2000],
+                eval_result=req.eval_result,
+            ))
+            print(f"[DEBUG] SolvedProblem added to session")
+        else:
+            print(f"[WARN] Problem data missing required keys")
     
     db.commit()
     db.refresh(node)
     
     return {"concept_id": node.id, "confidence": node.confidence}
+
+# ---------------------
+# Solved Problems (Sync)
+# ---------------------
+
+@app.post("/api/concepts/{concept_id}/solved")
+def create_solved_problem(
+    concept_id: str,
+    req: SolvedProblemCreate,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Store a solved problem for a concept (called by extension after solve-and-sync)."""
+    node = db.query(ConceptNode).filter(ConceptNode.id == concept_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Concept not found")
+    course = db.query(Course).filter(Course.id == node.course_id, Course.user_id == user_id).first()
+    if not course:
+        raise HTTPException(status_code=403, detail="Not your course")
+    sp = SolvedProblem(
+        id=str(uuid.uuid4()),
+        concept_id=concept_id,
+        user_id=user_id,
+        question=req.question[:2000],
+        options=json.dumps(req.options),
+        correct_answer=req.correct_answer[:500],
+        user_answer=req.user_answer[:2000],
+        eval_result=req.eval_result,
+    )
+    db.add(sp)
+    db.commit()
+    return {"id": sp.id, "saved": True}
+
+
+@app.get("/api/concepts/{concept_id}/solved")
+def get_solved_problems(
+    concept_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Return solved problems for a concept (for sync)."""
+    node = db.query(ConceptNode).filter(ConceptNode.id == concept_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Concept not found")
+    course = db.query(Course).filter(Course.id == node.course_id, Course.user_id == user_id).first()
+    if not course:
+        raise HTTPException(status_code=403, detail="Not your course")
+    rows = db.query(SolvedProblem).filter(
+        SolvedProblem.concept_id == concept_id, SolvedProblem.user_id == user_id
+    ).order_by(SolvedProblem.created_at.desc()).limit(100).all()
+    return [
+        {
+            "id": r.id,
+            "concept_id": r.concept_id,
+            "question": r.question,
+            "options": json.loads(r.options) if r.options else [],
+            "correct_answer": r.correct_answer,
+            "user_answer": r.user_answer,
+            "eval_result": r.eval_result,
+            "created_at": str(r.created_at),
+        }
+        for r in rows
+    ]
+
 
 # ---------------------
 # Resources & Poll Routes
@@ -468,19 +565,61 @@ def get_resources(
     if not node:
         raise HTTPException(status_code=404, detail="Concept not found")
     
+    # Return stored resources if present
+    stored = db.query(NodeResource).filter(NodeResource.concept_id == concept_id).limit(3).all()
+    if stored:
+        return [
+            {"title": r.title, "url": r.url, "type": r.type, "why": r.why}
+            for r in stored
+        ]
+    
+    # Generate via LLM and store
     try:
         raw = call_llm(
             RESOURCES_PROMPT.format(label=node.label, description=node.description)
         )
-        resources = parse_json_response(raw)
-        return resources[:3]  # Ensure exactly 3
-    except Exception as e:
-        # Fallback resources
-        return [
+        resources = parse_json_response(raw)[:3]
+        for r in resources:
+            db.add(NodeResource(
+                id=str(uuid.uuid4()),
+                concept_id=concept_id,
+                title=str(r.get("title", ""))[:500],
+                url=str(r.get("url", ""))[:2048],
+                type=r.get("type", "article") if r.get("type") in ("video", "article") else "article",
+                why=str(r.get("why", ""))[:500],
+            ))
+        db.commit()
+        return resources
+    except Exception:
+        fallback = [
             {"title": f"Learn {node.label} - Video Tutorial", "url": f"https://www.youtube.com/results?search_query={node.label}+tutorial", "type": "video", "why": "Visual learning is effective for this topic"},
             {"title": f"{node.label} - Comprehensive Guide", "url": f"https://www.google.com/search?q={node.label}+guide", "type": "article", "why": "In-depth reading material"},
             {"title": f"{node.label} - Documentation", "url": f"https://www.google.com/search?q={node.label}+documentation", "type": "article", "why": "Official reference material"},
         ]
+        for r in fallback:
+            db.add(NodeResource(
+                id=str(uuid.uuid4()),
+                concept_id=concept_id,
+                title=r["title"], url=r["url"], type=r["type"], why=r["why"],
+            ))
+        db.commit()
+        return fallback
+
+
+def _fallback_poll(label: str, description: str) -> dict:
+    """Generate a deterministic fallback poll when the LLM is unavailable."""
+    import random
+    desc_short = description[:80] if description else label
+    return {
+        "question": f"Which of the following best describes '{label}'?",
+        "options": [
+            f"A) {desc_short}",
+            f"B) A type of hardware component used in networking",
+            f"C) A visual design pattern for user interfaces",
+            f"D) A database indexing strategy for large datasets",
+        ],
+        "correct_answer": "A",
+    }
 
 
 @app.post("/api/concepts/{concept_id}/poll")
@@ -501,7 +640,8 @@ def generate_poll(
         poll = parse_json_response(raw)
         return poll
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to generate poll: {e}")
+        print(f"[WARN] LLM poll generation failed ({e}), using fallback")
+        return _fallback_poll(node.label, node.description)
 
 
 @app.post("/api/concepts/{concept_id}/poll/evaluate")

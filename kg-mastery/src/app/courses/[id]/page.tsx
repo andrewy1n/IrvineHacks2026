@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useNebulaStore } from "@/store/nebulaStore";
 import { getAuthToken, apiFetch, getStatusFromConfidence } from "@/lib/utils";
-import type { GraphNode } from "@/lib/types";
+import type { GraphNode, SolvedProblem } from "@/lib/types";
 import { confidenceToColor } from "@/lib/colors";
 import { getAncestors } from "@/lib/graph";
 import type { GraphNode as KGNode } from "@/components/graph/KnowledgeGraph";
@@ -20,6 +20,8 @@ import {
     ThumbsDown,
     Eye,
     ArrowLeft,
+    ChevronDown,
+    ChevronUp,
 } from "lucide-react";
 
 const COLOR_HEX: Record<string, string> = {
@@ -53,6 +55,8 @@ export default function CourseGraphPage() {
         drawerOpen,
         resources,
         resourcesLoading,
+        solvedProblems,
+        solvedProblemsLoading,
         poll,
         pollLoading,
         pollModalOpen,
@@ -60,6 +64,7 @@ export default function CourseGraphPage() {
         selectNode,
         closeDrawer,
         generatePoll,
+        fetchSolvedProblems,
         updateMastery,
         updateMasteryDelta,
         setPollModalOpen,
@@ -73,6 +78,14 @@ export default function CourseGraphPage() {
         }
         fetchGraph(courseId);
     }, [courseId, router, fetchGraph]);
+
+    useEffect(() => {
+        const handleVisibility = () => {
+            if (document.visibilityState === "visible" && courseId) fetchGraph(courseId);
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => document.removeEventListener("visibilitychange", handleVisibility);
+    }, [courseId, fetchGraph]);
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -108,29 +121,9 @@ export default function CourseGraphPage() {
         [selectNode, graphData?.nodes]
     );
 
-    const MAX_DISPLAY_NODES = 60;
     const displayGraph = useMemo(() => {
         if (!graphData || graphData.nodes.length === 0) return null;
-        if (graphData.nodes.length <= MAX_DISPLAY_NODES) return graphData;
-        const linkCount = new Map<string, number>();
-        graphData.nodes.forEach((n) => linkCount.set(n.id, 0));
-        graphData.links.forEach((link) => {
-            const s = typeof link.source === "string" ? link.source : (link.source as GraphNode).id;
-            const t = typeof link.target === "string" ? link.target : (link.target as GraphNode).id;
-            linkCount.set(s, (linkCount.get(s) ?? 0) + 1);
-            linkCount.set(t, (linkCount.get(t) ?? 0) + 1);
-        });
-        const sorted = [...graphData.nodes].sort(
-            (a, b) => (linkCount.get(b.id) ?? 0) - (linkCount.get(a.id) ?? 0)
-        );
-        const kept = new Set(sorted.slice(0, MAX_DISPLAY_NODES).map((n) => n.id));
-        const nodes = graphData.nodes.filter((n) => kept.has(n.id));
-        const links = graphData.links.filter((link) => {
-            const s = typeof link.source === "string" ? link.source : (link.source as GraphNode).id;
-            const t = typeof link.target === "string" ? link.target : (link.target as GraphNode).id;
-            return kept.has(s) && kept.has(t);
-        });
-        return { ...graphData, nodes, links };
+        return graphData;
     }, [graphData]);
 
     const kgNodes: KGNode[] = useMemo(() => {
@@ -324,12 +317,33 @@ export default function CourseGraphPage() {
                                     </div>
                                 )}
                             </div>
+                            <div>
+                                <h4 className="text-[10px] font-semibold text-[#C5AE79] uppercase tracking-wider mb-2">
+                                    Questions you&apos;ve solved
+                                </h4>
+                                {solvedProblemsLoading ? (
+                                    <div className="flex items-center gap-2 text-[#C5AE79]/40 text-xs py-3">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Loading...
+                                    </div>
+                                ) : solvedProblems.length === 0 ? (
+                                    <p className="text-[10px] text-[#C5AE79]/40 py-2">
+                                        No questions yet. Use Solve &amp; Sync or take a quick poll.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {solvedProblems.map((sp) => (
+                                            <SolvedQuestionCard key={sp.id} sp={sp} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={() => generatePoll(selectedNode.id)}
                                 disabled={pollLoading}
                                 className="w-full h-9 bg-[#C5AE79]/15 border border-[#C5AE79]/30 text-[#C5AE79] text-xs font-semibold rounded-lg hover:bg-[#C5AE79]/25 transition-all disabled:opacity-50"
                             >
-                                {pollLoading ? "Generating..." : "🎯 Take Quick Poll"}
+                                {pollLoading ? "Generating..." : "Generate Question"}
                             </button>
                             {isDev && (
                                 <div className="pt-3 border-t border-[#C5AE79]/10 space-y-1.5">
@@ -366,13 +380,74 @@ export default function CourseGraphPage() {
                         loading={pollLoading}
                         nodeId={selectedNode?.id || ""}
                         onClose={() => setPollModalOpen(false)}
-                        onResult={(evalResult) => {
-                            if (selectedNode) updateMastery(selectedNode.id, evalResult);
+                        onResult={async (evalResult, problem) => {
                             setPollModalOpen(false);
+                            if (selectedNode) {
+                                await updateMastery(selectedNode.id, evalResult, problem);
+                                if (problem) fetchSolvedProblems(selectedNode.id);
+                            }
                         }}
                     />
                 )}
             </div>
+        </div>
+    );
+}
+
+function SolvedQuestionCard({ sp }: { sp: SolvedProblem }) {
+    const [expanded, setExpanded] = useState(false);
+    const options = Array.isArray(sp.options) ? sp.options : [];
+    return (
+        <div className="rounded-lg bg-[#0a0a0a] border border-[#C5AE79]/10 overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="w-full text-left p-2.5 flex items-start justify-between gap-2 hover:bg-[#C5AE79]/5 transition-colors"
+            >
+                <p className="text-xs text-[#C5AE79]/90 leading-snug line-clamp-2 flex-1 min-w-0">
+                    {sp.question}
+                </p>
+                <span
+                    className={`text-[9px] font-semibold uppercase shrink-0 ${
+                        sp.eval_result === "correct"
+                            ? "text-[#00ffff]"
+                            : sp.eval_result === "partial"
+                              ? "text-[#C5AE79]"
+                              : "text-[#ff0055]/80"
+                    }`}
+                >
+                    {sp.eval_result}
+                </span>
+                {expanded ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-[#C5AE79]/50 shrink-0 mt-0.5" />
+                ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-[#C5AE79]/50 shrink-0 mt-0.5" />
+                )}
+            </button>
+            {expanded && (
+                <div className="px-2.5 pb-2.5 pt-0 border-t border-[#C5AE79]/10 space-y-2">
+                    <p className="text-xs text-[#C5AE79]/90 leading-relaxed pt-2">
+                        {sp.question}
+                    </p>
+                    {options.length > 0 && (
+                        <div className="space-y-1">
+                            <span className="text-[10px] font-medium text-[#C5AE79]/60 uppercase tracking-wider">Options</span>
+                            <ul className="text-xs text-[#C5AE79]/80 space-y-0.5">
+                                {options.map((opt, i) => (
+                                    <li key={i}>{opt}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    <div className="text-[10px] space-y-1">
+                        <p><span className="text-[#C5AE79]/50">Your answer:</span> <span className="text-[#C5AE79]/90">{sp.user_answer || "—"}</span></p>
+                        <p><span className="text-[#C5AE79]/50">Correct answer:</span> <span className="text-[#00ffff]/90">{sp.correct_answer || "—"}</span></p>
+                    </div>
+                    {sp.created_at && (
+                        <p className="text-[10px] text-[#C5AE79]/40">{new Date(sp.created_at).toLocaleDateString()}</p>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -387,7 +462,7 @@ function PollModal({
     loading: boolean;
     nodeId: string;
     onClose: () => void;
-    onResult: (evalResult: string) => void;
+    onResult: (evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => void;
 }) {
     const [selected, setSelected] = useState<string | null>(null);
     const [showResult, setShowResult] = useState(false);
@@ -396,7 +471,8 @@ function PollModal({
         if (!selected || !poll) return;
         const isCorrect = selected === poll.correct_answer;
         setShowResult(true);
-        setTimeout(() => onResult(isCorrect ? "correct" : "wrong"), 1500);
+        const problem = { question: poll.question, options: poll.options || [], correct_answer: poll.correct_answer, user_answer: selected };
+        setTimeout(() => onResult(isCorrect ? "correct" : "wrong", problem), 1500);
     };
 
     return (

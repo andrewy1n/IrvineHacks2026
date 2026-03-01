@@ -9,7 +9,11 @@
   const QUIZ_STORAGE_KEY = "gradescope_quiz_data";
   const CLASSIFY_PENDING_KEY = "classify_pending_text";
   const CLASSIFY_RESULT_KEY = "classify_last_result";
+  const SECTION_MASTERY_VIEWED_KEY = "section_mastery_sectionsViewed";
   const STUDY_MODE_KEY = "study_mode";
+  const SOLVE_SYNC_PROBLEMS_KEY = "solveSync_problems";
+  const PROBLEMS_NODE_ID = "__problems__";
+  const PROBLEMS_LABEL = "Problems";
   const SIDEBAR_WIDTH_MIN = 320;
   const SIDEBAR_WIDTH_MAX = 450;
   const SIDEBAR_WIDTH_DEFAULT = 380;
@@ -345,6 +349,19 @@
         box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: transform 0.2s;
       }
       .sidebar-toggle-switch.on::after { transform: translateX(16px); }
+      .sidebar-concept-mastery {
+        padding: 12px 16px; margin: 0;
+        background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
+        border-bottom: 1px solid #99f6e4;
+        flex-shrink: 0;
+      }
+      .sidebar-concept-mastery .concept-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f766e; margin-bottom: 4px; }
+      .sidebar-concept-mastery .concept-value { font-size: 14px; font-weight: 600; color: #134e4a; margin-bottom: 10px; }
+      .sidebar-concept-mastery .mastery-row { display: flex; align-items: center; gap: 8px; }
+      .sidebar-concept-mastery .mastery-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f766e; }
+      .sidebar-concept-mastery .mastery-bar-wrap { flex: 1; height: 8px; background: #ccfbf1; border-radius: 4px; overflow: hidden; }
+      .sidebar-concept-mastery .mastery-bar { height: 100%; background: #0d9488; border-radius: 4px; transition: width 0.2s; }
+      .sidebar-concept-mastery .mastery-pct { font-size: 12px; font-weight: 600; color: #134e4a; min-width: 2.5em; }
       .visible-text-section {
         border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
         display: flex; flex-direction: column; overflow: hidden;
@@ -371,6 +388,25 @@
       }
       .sidebar-classify-result.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
       .sidebar-classify-result.pending { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; font-style: italic; }
+      .sidebar-sections-scrolled {
+        padding: 6px 16px; font-size: 12px; color: #0f766e;
+        background: #f0fdfa; border-bottom: 1px solid #99f6e4;
+      }
+      .sidebar-problems {
+        padding: 12px 16px; margin: 0;
+        background: #fefce8; border-bottom: 1px solid #fde047;
+        flex-shrink: 0;
+      }
+      .sidebar-problems .problems-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #854d0e; margin-bottom: 8px; font-weight: 600; }
+      .sidebar-problems .problems-list { max-height: 160px; overflow-y: auto; font-size: 12px; }
+      .sidebar-problems .problem-item {
+        padding: 8px 0; border-bottom: 1px solid #fef08a;
+        color: #374151; line-height: 1.35;
+      }
+      .sidebar-problems .problem-item:last-child { border-bottom: none; }
+      .sidebar-problems .problem-question { color: #1f2937; margin-bottom: 4px; }
+      .sidebar-problems .problem-meta { font-size: 11px; color: #6b7280; }
+      .sidebar-problems .problems-empty { color: #9ca3af; font-style: italic; padding: 8px 0; }
     `;
 
     const rail = document.createElement("div");
@@ -414,12 +450,84 @@
     toggleRow.appendChild(toggleLabel);
     toggleRow.appendChild(toggleSwitch);
 
+    const conceptMasterySection = document.createElement("div");
+    conceptMasterySection.className = "sidebar-concept-mastery";
+    const conceptLabel = document.createElement("div");
+    conceptLabel.className = "concept-label";
+    conceptLabel.textContent = "Concept";
+    const conceptValue = document.createElement("div");
+    conceptValue.className = "concept-value";
+    conceptValue.textContent = "—";
+    const masteryRow = document.createElement("div");
+    masteryRow.className = "mastery-row";
+    const masteryLabel = document.createElement("span");
+    masteryLabel.className = "mastery-label";
+    masteryLabel.textContent = "Mastery";
+    const masteryBarWrap = document.createElement("div");
+    masteryBarWrap.className = "mastery-bar-wrap";
+    const masteryBar = document.createElement("div");
+    masteryBar.className = "mastery-bar";
+    masteryBar.style.width = "0%";
+    const masteryPct = document.createElement("span");
+    masteryPct.className = "mastery-pct";
+    masteryPct.textContent = "0%";
+    masteryBarWrap.appendChild(masteryBar);
+    masteryRow.appendChild(masteryLabel);
+    masteryRow.appendChild(masteryBarWrap);
+    masteryRow.appendChild(masteryPct);
+    conceptMasterySection.appendChild(conceptLabel);
+    conceptMasterySection.appendChild(conceptValue);
+    conceptMasterySection.appendChild(masteryRow);
+
+    const problemsSection = document.createElement("div");
+    problemsSection.className = "sidebar-problems";
+    const problemsTitle = document.createElement("div");
+    problemsTitle.className = "problems-title";
+    problemsTitle.textContent = "Problems";
+    const problemsListEl = document.createElement("div");
+    problemsListEl.className = "problems-list";
+    problemsSection.appendChild(problemsTitle);
+    problemsSection.appendChild(problemsListEl);
+
+    function refreshProblemsList() {
+      safeStorageGet([SOLVE_SYNC_PROBLEMS_KEY], (data) => {
+        const list = Array.isArray(data[SOLVE_SYNC_PROBLEMS_KEY]) ? data[SOLVE_SYNC_PROBLEMS_KEY] : [];
+        problemsListEl.innerHTML = "";
+        if (list.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "problems-empty";
+          empty.textContent = "No problems yet.";
+          problemsListEl.appendChild(empty);
+        } else {
+          list.forEach((p) => {
+            const item = document.createElement("div");
+            item.className = "problem-item";
+            const q = document.createElement("div");
+            q.className = "problem-question";
+            q.textContent = (p.question || "").trim() || "(no question)";
+            if (q.textContent.length > 60) q.textContent = q.textContent.slice(0, 60) + "…";
+            const meta = document.createElement("div");
+            meta.className = "problem-meta";
+            const score = typeof p.score === "number" ? p.score + "%" : "—";
+            const date = p.submittedAt ? new Date(p.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+            meta.textContent = (p.mappedNode || "—") + " · " + score + (date ? " · " + date : "");
+            item.appendChild(q);
+            item.appendChild(meta);
+            problemsListEl.appendChild(item);
+          });
+        }
+      });
+    }
+
     const visibleTextSection = document.createElement("div");
     visibleTextSection.className = "visible-text-section";
     visibleTextSection.style.display = sidebarShowVisibleSection ? "" : "none";
     const visibleTextPreview = document.createElement("div");
     visibleTextPreview.className = "visible-text-preview empty";
     visibleTextPreview.textContent = "No content yet. Open a Gradescope quiz or OpenStax page with study mode on.";
+    const sectionsScrolledRow = document.createElement("div");
+    sectionsScrolledRow.className = "sidebar-sections-scrolled";
+    sectionsScrolledRow.textContent = "Sections scrolled: 0";
     const classifyWrap = document.createElement("div");
     classifyWrap.className = "sidebar-classify-wrap";
     const classifyBtn = document.createElement("button");
@@ -439,15 +547,32 @@
     classifyWrap.appendChild(refreshKgBtn);
     classifyWrap.appendChild(classifyResult);
     visibleTextSection.appendChild(visibleTextPreview);
+    visibleTextSection.appendChild(sectionsScrolledRow);
     visibleTextSection.appendChild(classifyWrap);
 
     const body = document.createElement("div");
     body.className = "sidebar-body";
 
     inner.appendChild(header);
+    inner.appendChild(conceptMasterySection);
+    inner.appendChild(problemsSection);
     inner.appendChild(toggleRow);
     inner.appendChild(visibleTextSection);
     inner.appendChild(body);
+
+    function isProblemsPage(payload) {
+      if (!payload || payload.error || payload.pending) return false;
+      return payload.nodeLabel === PROBLEMS_LABEL || payload.nodeId === PROBLEMS_NODE_ID;
+    }
+
+    function updateSidebarMode(payload) {
+      const showProblems = isProblemsPage(payload);
+      problemsSection.style.display = showProblems ? "" : "none";
+      conceptMasterySection.style.display = showProblems ? "none" : "";
+      toggleRow.style.display = showProblems ? "none" : "";
+      visibleTextSection.style.display = showProblems ? "none" : (sidebarShowVisibleSection ? "" : "none");
+    }
+    updateSidebarMode(null);
 
     function getTextForClassify() {
       let text = "";
@@ -464,8 +589,13 @@
       return text && text.length >= 10 ? text : null;
     }
 
+    function updateSectionsScrolledDisplay(count) {
+      const n = typeof count === "number" ? count : 0;
+      sectionsScrolledRow.textContent = "Sections scrolled: " + n;
+    }
+
     function refreshSidebarVisibleText() {
-      safeStorageGet([OPENSTAX_STORAGE_KEY, QUIZ_STORAGE_KEY], (data) => {
+      safeStorageGet([OPENSTAX_STORAGE_KEY, QUIZ_STORAGE_KEY, SECTION_MASTERY_VIEWED_KEY], (data) => {
         const openstax = data[OPENSTAX_STORAGE_KEY];
         const quiz = data[QUIZ_STORAGE_KEY];
         let preview = "";
@@ -483,14 +613,26 @@
         window.__sidebarLastVisibleData = source || null;
         visibleTextPreview.textContent = preview || "No content yet. Open a Gradescope quiz or OpenStax page with study mode on.";
         visibleTextPreview.classList.toggle("empty", !preview);
+        updateSectionsScrolledDisplay(data[SECTION_MASTERY_VIEWED_KEY]);
       });
     }
 
+    function updateConceptMasteryDisplay(payload) {
+      const name = (payload && (payload.nodeLabel || (payload.message && payload.message.replace(/^Concept:\s*/i, "").split("\n")[0]))) || "—";
+      const conf = payload && typeof payload.confidence === "number" ? payload.confidence : null;
+      conceptValue.textContent = name.trim() || "—";
+      const pct = conf != null ? Math.round(conf * 100) : 0;
+      masteryBar.style.width = pct + "%";
+      masteryPct.textContent = pct + "%";
+    }
+
     function showClassifyResult(payload) {
+      updateSidebarMode(payload);
       if (!payload || !payload.message) {
         classifyResult.style.display = "none";
         return;
       }
+      if (!payload.error && !payload.pending && !isProblemsPage(payload)) updateConceptMasteryDisplay(payload);
       let display = payload.message;
       if (payload.confidence !== null && payload.confidence !== undefined && !payload.error) {
         const pct = Math.round(payload.confidence * 100);
@@ -542,8 +684,12 @@
     });
 
     host.refreshVisibleText = refreshSidebarVisibleText;
+    host.refreshProblemsList = refreshProblemsList;
+    host.updateSectionsScrolled = updateSectionsScrolledDisplay;
     host.updateClassifyResult = (payload) => {
       classifyResult.classList.remove("pending");
+      updateSidebarMode(payload);
+      if (payload && !payload.error && !payload.pending && !isProblemsPage(payload)) updateConceptMasteryDisplay(payload);
       showClassifyResult(payload);
     };
     host.visibleTextSection = visibleTextSection;
@@ -551,12 +697,27 @@
       refreshSidebarVisibleText();
       safeStorageGet([CLASSIFY_RESULT_KEY, "activeCourseId", "backendToken"], (data) => {
         const last = data[CLASSIFY_RESULT_KEY];
-        if (last) host.updateClassifyResult(last);
+        if (last) {
+          host.updateClassifyResult(last);
+        } else {
+          updateSidebarMode(null);
+          updateConceptMasteryDisplay(null);
+        }
         if (data.activeCourseId && data.backendToken) {
           safeSendMessage({ type: "FETCH_KG_LABELS" }, () => {});
         }
       });
+    } else {
+      safeStorageGet([CLASSIFY_RESULT_KEY], (data) => {
+        if (data[CLASSIFY_RESULT_KEY]) {
+          host.updateClassifyResult(data[CLASSIFY_RESULT_KEY]);
+        } else {
+          updateSidebarMode(null);
+          updateConceptMasteryDisplay(null);
+        }
+      });
     }
+    refreshProblemsList();
 
     rail.appendChild(resizeHandle);
     rail.appendChild(inner);
@@ -997,6 +1158,14 @@
     if (changes[CLASSIFY_RESULT_KEY] && sidebarHost && sidebarHost.updateClassifyResult) {
       clearClassifyTimeout();
       sidebarHost.updateClassifyResult(changes[CLASSIFY_RESULT_KEY].newValue);
+    }
+    if ((changes[SECTION_MASTERY_VIEWED_KEY] || changes.section_mastery_lastConceptId) && sidebarHost && sidebarHost.updateSectionsScrolled) {
+      safeStorageGet([SECTION_MASTERY_VIEWED_KEY], function (data) {
+        sidebarHost.updateSectionsScrolled(data[SECTION_MASTERY_VIEWED_KEY]);
+      });
+    }
+    if (changes[SOLVE_SYNC_PROBLEMS_KEY] && sidebarHost && sidebarHost.refreshProblemsList) {
+      sidebarHost.refreshProblemsList();
     }
   });
 

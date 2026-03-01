@@ -25,6 +25,10 @@ const FALLBACK_CATEGORIES = [
   "Other",
 ];
 
+const PROBLEMS_NODE_ID = "__problems__";
+const PROBLEMS_LABEL = "Problems";
+const PROBLEMS_DESCRIPTION = "Practice problems, quiz, or exercises page";
+
 const statusEl = document.getElementById("status");
 const resultEl = document.getElementById("result");
 const cancelBtn = document.getElementById("cancelClassify");
@@ -69,11 +73,15 @@ async function run() {
   }
 
   const useKgLabels = Array.isArray(kgLabels) && kgLabels.length > 0;
+  const problemsOption = { id: PROBLEMS_NODE_ID, label: PROBLEMS_LABEL, description: PROBLEMS_DESCRIPTION };
+  const extendedKgLabels = useKgLabels
+    ? [problemsOption, ...kgLabels]
+    : kgLabels || [];
   const labelList = useKgLabels
-    ? kgLabels.map((n) => n.label).filter(Boolean).join(", ")
+    ? extendedKgLabels.map((n) => n.label).filter(Boolean).join(", ")
     : FALLBACK_CATEGORIES.join(", ");
-  const conceptsWithDescriptions = useKgLabels && kgLabels.length > 0
-    ? kgLabels.map((n) => {
+  const conceptsWithDescriptions = useKgLabels && extendedKgLabels.length > 0
+    ? extendedKgLabels.map((n) => {
         const desc = (n.description || "").trim().slice(0, 80);
         return desc ? `${n.label}: ${desc}` : (n.label || "");
       }).filter(Boolean)
@@ -173,7 +181,7 @@ async function run() {
     const result = typeof rawResult === "string" ? rawResult : (rawResult && typeof rawResult.text === "string" ? rawResult.text : String(rawResult || ""));
     let trimmed = result.trim();
     trimmed = trimmed.replace(/^(concept|label|topic|category):\s*/i, "").trim();
-    const categories = useKgLabels ? kgLabels.map((n) => n.label) : FALLBACK_CATEGORIES;
+    const categories = useKgLabels ? extendedKgLabels.map((n) => n.label) : FALLBACK_CATEGORIES;
     let match = categories.find((c) => c && String(c).toLowerCase() === trimmed.toLowerCase());
     if (!match) {
       match = categories.find((c) => c && trimmed.toLowerCase().includes(String(c).toLowerCase()));
@@ -182,7 +190,7 @@ async function run() {
       match = categories.find((c) => c && String(c).toLowerCase().includes(trimmed.toLowerCase()));
     }
     const matchedLabel = match || trimmed || "(unknown)";
-    const matchedNode = useKgLabels && kgLabels.find((n) => n.label && String(n.label).toLowerCase() === matchedLabel.toLowerCase());
+    const matchedNode = useKgLabels && extendedKgLabels.find((n) => n.label && String(n.label).toLowerCase() === matchedLabel.toLowerCase());
     const resultMessage = "Concept: " + matchedLabel;
     setStatus("Done.", "done");
     resultEl.textContent = resultMessage;

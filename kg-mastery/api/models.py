@@ -54,6 +54,7 @@ class ConceptNode(Base):
     concept_type = Column(String, default="concept")  # concept | process | formula
     confidence = Column(Float, default=0.0)
     course = relationship("Course", back_populates="nodes")
+    resources = relationship("NodeResource", back_populates="concept_node", cascade="all, delete-orphan")
 
 
 class ConceptEdge(Base):
@@ -66,3 +67,29 @@ class ConceptEdge(Base):
     course = relationship("Course", back_populates="edges")
     source = relationship("ConceptNode", foreign_keys=[source_id])
     target = relationship("ConceptNode", foreign_keys=[target_id])
+
+
+class SolvedProblem(Base):
+    """Stores completed poll problems for sync and history."""
+    __tablename__ = "solved_problems"
+    id = Column(String, primary_key=True, default=gen_id)
+    concept_id = Column(String, ForeignKey("concept_nodes.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    question = Column(Text, nullable=False)
+    options = Column(Text, nullable=False)  # JSON array of option strings
+    correct_answer = Column(Text, nullable=False)
+    user_answer = Column(Text, nullable=False)
+    eval_result = Column(String(20), nullable=False)  # correct | partial | wrong
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class NodeResource(Base):
+    """Stores learning resources per concept node."""
+    __tablename__ = "node_resources"
+    id = Column(String, primary_key=True, default=gen_id)
+    concept_id = Column(String, ForeignKey("concept_nodes.id"), nullable=False)
+    title = Column(String, nullable=False)
+    url = Column(Text, nullable=False)
+    type = Column(String(20), nullable=False)  # video | article
+    why = Column(Text, default="")
+    concept_node = relationship("ConceptNode", back_populates="resources")

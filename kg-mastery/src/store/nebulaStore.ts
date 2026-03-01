@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GraphNode, GraphData, Resource, PollData } from "@/lib/types";
+import type { GraphNode, GraphData, Resource, PollData, SolvedProblem } from "@/lib/types";
 import { apiFetch } from "@/lib/utils";
 
 interface NebulaState {
@@ -15,6 +15,10 @@ interface NebulaState {
     resources: Resource[];
     resourcesLoading: boolean;
 
+    // Solved problems (questions done for this node)
+    solvedProblems: SolvedProblem[];
+    solvedProblemsLoading: boolean;
+
     // Poll
     poll: PollData | null;
     pollLoading: boolean;
@@ -25,8 +29,9 @@ interface NebulaState {
     selectNode: (node: GraphNode | null) => void;
     closeDrawer: () => void;
     fetchResources: (conceptId: string) => Promise<void>;
+    fetchSolvedProblems: (conceptId: string) => Promise<void>;
     generatePoll: (conceptId: string) => Promise<void>;
-    updateMastery: (conceptId: string, evalResult: string) => Promise<void>;
+    updateMastery: (conceptId: string, evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => Promise<void>;
     updateMasteryDelta: (conceptId: string, delta: number) => Promise<void>;
     setPollModalOpen: (open: boolean) => void;
     setGraphData: (data: GraphData) => void;
@@ -39,6 +44,8 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
     drawerOpen: false,
     resources: [],
     resourcesLoading: false,
+    solvedProblems: [],
+    solvedProblemsLoading: false,
     poll: null,
     pollLoading: false,
     pollModalOpen: false,
@@ -59,9 +66,10 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
     },
 
     selectNode: (node: GraphNode | null) => {
-        set({ selectedNode: node, drawerOpen: !!node, resources: [], poll: null });
+        set({ selectedNode: node, drawerOpen: !!node, resources: [], solvedProblems: [], poll: null });
         if (node) {
             get().fetchResources(node.id);
+            get().fetchSolvedProblems(node.id);
         }
     },
 
@@ -82,6 +90,21 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
         }
     },
 
+    fetchSolvedProblems: async (conceptId: string) => {
+        set({ solvedProblemsLoading: true });
+        try {
+            const res = await apiFetch(`/api/concepts/${conceptId}/solved`);
+            if (res.ok) {
+                const data = await res.json();
+                set({ solvedProblems: data, solvedProblemsLoading: false });
+            } else {
+                set({ solvedProblems: [], solvedProblemsLoading: false });
+            }
+        } catch {
+            set({ solvedProblems: [], solvedProblemsLoading: false });
+        }
+    },
+
     generatePoll: async (conceptId: string) => {
         set({ pollLoading: true, pollModalOpen: true });
         try {
@@ -97,11 +120,13 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
         }
     },
 
-    updateMastery: async (conceptId: string, evalResult: string) => {
+    updateMastery: async (conceptId: string, evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => {
         try {
+            const body: { eval_result: string; problem?: object } = { eval_result: evalResult };
+            if (problem) body.problem = problem;
             const res = await apiFetch(`/api/mastery/${conceptId}`, {
                 method: "PUT",
-                body: JSON.stringify({ eval_result: evalResult }),
+                body: JSON.stringify(body),
             });
             if (res.ok) {
                 const data = await res.json();
@@ -117,6 +142,7 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
                         selectedNode: state.selectedNode?.id === conceptId ? updatedNode : state.selectedNode,
                     };
                 });
+                if (problem) await get().fetchSolvedProblems(conceptId);
             }
         } catch {
             // silent fail for MVP

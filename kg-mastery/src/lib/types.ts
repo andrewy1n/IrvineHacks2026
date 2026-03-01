@@ -36,3 +36,14 @@ export interface PollData {
     options: string[];
     correct_answer: string;
 }
+
+export interface SolvedProblem {
+    id: string;
+    concept_id: string;
+    question: string;
+    options: string[];
+    correct_answer: string;
+    user_answer: string;
+    eval_result: "correct" | "partial" | "wrong";
+    created_at: string;
+}

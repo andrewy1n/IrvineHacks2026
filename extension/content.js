@@ -2,14 +2,21 @@
   const QUIZ_STORAGE_KEY = "gradescope_quiz_data";
   const OPENSTAX_STORAGE_KEY = "openstax_page_data";
   const OPENSTAX_HISTORY_KEY = "openstax_reading_history";
+  const OPENSTAX_SECTION_VIEWED_KEY = "openstax_section_viewed";
+  const SECTION_MASTERY_VIEWED_KEY = "section_mastery_sectionsViewed";
+  const SECTION_MASTERY_CONCEPT_KEY = "section_mastery_lastConceptId";
+  const CLASSIFY_RESULT_KEY = "classify_last_result";
   const STUDY_MODE_KEY = "study_mode";
+  const SECTIONS_REQUIRED_FOR_BOOST = 3;
   let openStaxVisibleBuffer = new Set();
-  // Accumulates every section the user has ever seen in this session (never cleared on scroll)
   let viewedSectionsHistory = [];
   let viewedSectionsSet = new Set();
   let currentViewportObserver = null;
   let currentMutationObserver = null;
   let lastObservedUrl = null;
+  let lastSavedSectionKey = "";
+  const SCROLL_BAND_PX = 250;
+  let lastScrollBand = -1;
 
   // Guard: avoid "Extension context invalidated" when extension was reloaded while page is open
   function safeStorageSet(obj) {
@@ -86,7 +93,6 @@
 
   function getCurrentlyVisibleOpenStaxText() {
     const elements = document.querySelectorAll(OPENSTAX_SELECTORS);
-    const viewHeight = window.innerHeight;
     const inMainOnly = [];
     elements.forEach((el) => {
       if (isInsideSidebarOrNav(el)) return;
@@ -94,20 +100,11 @@
       if (!text || OPENSTAX_SKIP_PATTERNS.test(text)) return;
       const ratio = getVisibleRatio(el);
       if (ratio < OPENSTAX_VISIBLE_THRESHOLD) return;
-      inMainOnly.push({ el, text, ratio, top: el.getBoundingClientRect().top, isHeading: OPENSTAX_HEADING_TAGS.test(el.tagName || "") });
+      inMainOnly.push({ text, top: el.getBoundingClientRect().top });
     });
     if (inMainOnly.length === 0) return "";
     inMainOnly.sort((a, b) => a.top - b.top);
-    let startIndex = 0;
-    const firstHeadingIdx = inMainOnly.findIndex((x) => x.isHeading);
-    if (firstHeadingIdx >= 0) startIndex = firstHeadingIdx;
-    const sectionTexts = [];
-    for (let i = startIndex; i < inMainOnly.length; i++) {
-      const item = inMainOnly[i];
-      if (item.isHeading && i > startIndex) break;
-      sectionTexts.push(item.text);
-    }
-    return sectionTexts.join("\n\n");
+    return inMainOnly.map((x) => x.text).join("\n\n");
   }
 
   function observeNewElements(observer) {
@@ -152,8 +149,45 @@
       clearTimeout(studyTimer);
       studyTimer = setTimeout(() => {
         const activeText = getCurrentlyVisibleOpenStaxText();
+        const scrollBand = Math.floor(window.scrollY / SCROLL_BAND_PX) * SCROLL_BAND_PX;
+        const textKey = activeText ? activeText.replace(/\s+/g, " ").slice(0, 300) : "";
+        const sectionKey = textKey || String(scrollBand);
+        const keyChanged = sectionKey !== lastSavedSectionKey;
+        const bandChanged = scrollBand !== lastScrollBand;
+        const willFire = sectionKey && (keyChanged || bandChanged);
+        console.log("[OpenStax Sections] scrollY=" + window.scrollY + " scrollBand=" + scrollBand + " activeTextLen=" + (activeText ? activeText.length : 0) + " textKeyLen=" + textKey.length + " sectionKeyChanged=" + keyChanged + " bandChanged=" + bandChanged + " willFire=" + willFire + " lastBand=" + lastScrollBand);
         if (activeText) saveVisibleOpenStaxPayload(activeText);
-      }, 1000);
+        if (willFire) {
+          lastSavedSectionKey = sectionKey;
+          lastScrollBand = scrollBand;
+          try {
+            chrome.storage.local.get(
+              [CLASSIFY_RESULT_KEY, SECTION_MASTERY_VIEWED_KEY, SECTION_MASTERY_CONCEPT_KEY],
+              (data) => {
+                const result = data[CLASSIFY_RESULT_KEY];
+                const nodeId = result && result.nodeId;
+                let viewed = typeof data[SECTION_MASTERY_VIEWED_KEY] === "number" ? data[SECTION_MASTERY_VIEWED_KEY] : 0;
+                const lastConceptId = data[SECTION_MASTERY_CONCEPT_KEY];
+                if (lastConceptId !== nodeId) viewed = 0;
+                viewed += 1;
+                const payload = {
+                  [SECTION_MASTERY_VIEWED_KEY]: viewed,
+                  [SECTION_MASTERY_CONCEPT_KEY]: nodeId || lastConceptId || "",
+                  [OPENSTAX_SECTION_VIEWED_KEY]: false,
+                };
+                chrome.storage.local.set(payload, () => {
+                  console.log("[OpenStax Sections] sections viewed=" + viewed + " (wrote to storage)");
+                  if (viewed >= SECTIONS_REQUIRED_FOR_BOOST && nodeId) {
+                    chrome.runtime.sendMessage({ type: "APPLY_MASTERY_BOOST", nodeId }, () => {});
+                  }
+                });
+              }
+            );
+          } catch (e) {
+            console.warn("[OpenStax Sections] storage failed", e);
+          }
+        }
+      }, 800);
     }, { root: null, rootMargin: "0px", threshold: OPENSTAX_VISIBLE_THRESHOLD });
 
     currentViewportObserver = viewportObserver;
@@ -168,6 +202,9 @@
 
     const initialText = getCurrentlyVisibleOpenStaxText();
     if (initialText) saveVisibleOpenStaxPayload(initialText);
+    lastScrollBand = Math.floor(window.scrollY / SCROLL_BAND_PX) * SCROLL_BAND_PX;
+    lastSavedSectionKey = initialText ? initialText.replace(/\s+/g, " ").slice(0, 300) : String(lastScrollBand);
+    console.log("[OpenStax Sections] setup done scrollY=" + window.scrollY + " lastScrollBand=" + lastScrollBand + " initialTextLen=" + (initialText ? initialText.length : 0));
   }
 
   // Re-initialize observer when OpenStax SPA navigates to a new section/chapter
