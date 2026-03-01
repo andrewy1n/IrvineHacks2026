@@ -226,9 +226,11 @@ export default function CourseDetail() {
           loading={pollLoading}
           nodeId={selectedNode?.id ?? ""}
           onClose={() => setPollModalOpen(false)}
-          onResult={(evalResult) => {
-            if (selectedNode) updateMastery(selectedNode.id, evalResult);
+          onResult={async (evalResult, problem) => {
             setPollModalOpen(false);
+            if (selectedNode) {
+              await updateMastery(selectedNode.id, evalResult, problem);
+            }
           }}
         />
       )}
@@ -246,7 +248,7 @@ function PollModal({
   loading: boolean;
   nodeId: string;
   onClose: () => void;
-  onResult: (evalResult: string) => void;
+  onResult: (evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -255,7 +257,8 @@ function PollModal({
     if (!selected || !poll) return;
     const isCorrect = selected === poll.correct_answer;
     setShowResult(true);
-    setTimeout(() => onResult(isCorrect ? "correct" : "wrong"), 1500);
+    const problem = { question: poll.question, options: poll.options || [], correct_answer: poll.correct_answer, user_answer: selected };
+    setTimeout(() => onResult(isCorrect ? "correct" : "wrong", problem), 1500);
   };
 
   return (

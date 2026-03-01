@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useNebulaStore } from "@/store/nebulaStore";
+import type { SolvedProblem } from "@/lib/types";
 import {
   Sheet,
   SheetContent,
@@ -6,7 +8,65 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { PlayCircle, ExternalLink, ShieldCheck, Loader2, FileText } from "lucide-react";
+import { PlayCircle, ExternalLink, ShieldCheck, Loader2, FileText, ChevronDown, ChevronUp } from "lucide-react";
+
+function SolvedQuestionCard({ sp }: { sp: SolvedProblem }) {
+  const [expanded, setExpanded] = useState(false);
+  const options = Array.isArray(sp.options) ? sp.options : [];
+  return (
+      <div className="rounded-lg bg-white/[0.02] border border-white/10 overflow-hidden backdrop-blur-md">
+          <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              className="w-full text-left p-3 flex items-start justify-between gap-2 hover:bg-white/[0.05] transition-colors"
+          >
+              <p className="text-xs text-white/90 leading-snug line-clamp-2 flex-1 min-w-0">
+                  {sp.question}
+              </p>
+              <span
+                  className={`text-[9px] font-semibold uppercase shrink-0 ${
+                      sp.eval_result === "correct"
+                          ? "text-emerald-400"
+                          : sp.eval_result === "partial"
+                            ? "text-yellow-400"
+                            : "text-red-400"
+                  }`}
+              >
+                  {sp.eval_result}
+              </span>
+              {expanded ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-white/50 shrink-0 mt-0.5" />
+              ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-white/50 shrink-0 mt-0.5" />
+              )}
+          </button>
+          {expanded && (
+              <div className="px-3 pb-3 pt-0 border-t border-white/10 space-y-2 bg-black/20">
+                  <p className="text-xs text-white/90 leading-relaxed pt-2">
+                      {sp.question}
+                  </p>
+                  {options.length > 0 && (
+                      <div className="space-y-1">
+                          <span className="text-[10px] font-medium text-white/60 uppercase tracking-wider">Options</span>
+                          <ul className="text-xs text-white/80 space-y-0.5">
+                              {options.map((opt, i) => (
+                                  <li key={i}>{opt}</li>
+                              ))}
+                          </ul>
+                      </div>
+                  )}
+                  <div className="text-[10px] space-y-1 mt-2 p-2 bg-white/5 rounded">
+                      <p><span className="text-white/50">Your answer:</span> <span className="text-white/90">{sp.user_answer || "—"}</span></p>
+                      <p><span className="text-white/50">Correct answer:</span> <span className="text-emerald-400">{sp.correct_answer || "—"}</span></p>
+                  </div>
+                  {sp.created_at && (
+                      <p className="text-[10px] text-white/40 pt-1">{new Date(sp.created_at).toLocaleDateString()}</p>
+                  )}
+              </div>
+          )}
+      </div>
+  );
+}
 
 export default function NodeDrawer() {
   const selectedNode = useNebulaStore((s) => s.selectedNode);
@@ -16,6 +76,8 @@ export default function NodeDrawer() {
   const pollLoading = useNebulaStore((s) => s.pollLoading);
   const generatePoll = useNebulaStore((s) => s.generatePoll);
   const updateMasteryDelta = useNebulaStore((s) => s.updateMasteryDelta);
+  const solvedProblems = useNebulaStore((s) => s.solvedProblems);
+  const solvedProblemsLoading = useNebulaStore((s) => s.solvedProblemsLoading);
 
   const node = selectedNode;
 
@@ -96,6 +158,28 @@ export default function NodeDrawer() {
               </div>
             )}
 
+            <div>
+              <h4 className="mb-4 text-sm font-medium uppercase tracking-widest text-white/60">
+                Questions you've solved
+              </h4>
+              {solvedProblemsLoading ? (
+                <div className="flex items-center gap-3 text-sm text-white/70 tracking-wide uppercase">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading...
+                </div>
+              ) : solvedProblems.length === 0 ? (
+                <p className="text-sm text-white/40">
+                  No questions yet. Generate a question to test your knowledge!
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {solvedProblems.map((sp) => (
+                    <SolvedQuestionCard key={sp.id} sp={sp} />
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="h-24" />
           </div>
         </div>
@@ -111,7 +195,7 @@ export default function NodeDrawer() {
             ) : (
               <ShieldCheck className="mr-2 h-5 w-5" />
             )}
-            Verify Mastery (Take Poll)
+            Generate Question
           </Button>
 
           <div className="space-y-3">
