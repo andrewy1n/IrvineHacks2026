@@ -440,10 +440,10 @@ export default function KnowledgeGraph({
                 }
                 const cdx = tx - sx;
                 const d = `M${sx},${sy} C${sx + cdx / 2},${sy} ${tx - cdx / 2},${ty} ${tx},${ty}`;
-                const sourceRank = revealRank.get(source.id) ?? 0;
-                const targetRank = revealRank.get(target.id) ?? 0;
-                const edgeRevealed = revealProgress > Math.max(sourceRank, targetRank);
-                const particleColor = isPath ? "var(--gold)" : "#64748b";
+                                const sourceRank = revealRank.get(source.id) ?? 0;
+                                const targetRank = revealRank.get(target.id) ?? 0;
+                                const edgeRevealed = revealProgress >= Math.max(sourceRank, targetRank);
+                                const particleColor = isPath ? "var(--gold)" : "#64748b";
                 const strokeColor = isPath ? "var(--gold)" : "#64748b";
                 return (
                   <g key={`link-${i}`}>
@@ -495,11 +495,11 @@ export default function KnowledgeGraph({
               const hasSelection = activeSet.size > 0;
               const isDimmed = hasSelection && !isInSet;
               const isActive = node.id === activeConceptId;
-              const glowColorHex = isActive ? "#ffffff" : borderColor;
-              const baseFill = confidenceToNodeFillDark(node.confidence ?? 0);
-              const nodeRank = revealRank.get(node.id) ?? 0;
-              const nodeRevealed = revealProgress > nodeRank;
-              const targetOpacity = nodeRevealed ? (isDimmed ? 0.2 : 1) : 0;
+                            const glowColorHex = isActive ? "#ffffff" : borderColor;
+                            const baseFill = confidenceToNodeFillDark(node.confidence ?? 0);
+                            const nodeRank = revealRank.get(node.id) ?? 0;
+                            const nodeRevealed = revealProgress >= nodeRank;
+                            const targetOpacity = nodeRevealed ? (isDimmed ? 0.2 : 1) : 0;
               const targetScale = nodeRevealed
                 ? isActive
                   ? 1.25
