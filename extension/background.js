@@ -63,14 +63,29 @@ function resolveConceptIdFromLabel(mappedNodeLabel, kgLabels) {
   return node ? node.id : null;
 }
 
+let lastAutoClassifyTabId = null;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "OPEN_TAB") {
     const url = msg.url;
     if (url) {
-      chrome.tabs.create({ url }, () => sendResponse({ ok: true }));
+      const isAuto = url.indexOf("auto=1") !== -1;
+      chrome.tabs.create({ url, active: true }, (tab) => {
+        if (isAuto && tab && tab.id) lastAutoClassifyTabId = tab.id;
+        sendResponse({ ok: true });
+      });
     } else {
       sendResponse({ ok: false });
     }
+    return true;
+  }
+
+  if (msg.type === "CLASSIFY_DONE") {
+    if (lastAutoClassifyTabId != null) {
+      chrome.tabs.remove(lastAutoClassifyTabId, () => {});
+      lastAutoClassifyTabId = null;
+    }
+    sendResponse({ ok: true });
     return true;
   }
 

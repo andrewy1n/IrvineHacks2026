@@ -31,7 +31,7 @@ const cancelBtn = document.getElementById("cancelClassify");
 
 const CREATE_TIMEOUT_MS = 30000;
 const CREATE_DOWNLOAD_TIMEOUT_MS = 600000; // 10 min when triggering model download
-const PROMPT_TIMEOUT_MS = 60000;
+const PROMPT_TIMEOUT_MS = 20000;
 const withTimeout = (p, ms, msg) =>
   Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(msg || "Timed out")), ms))]);
 
@@ -46,7 +46,16 @@ function getLM() {
   return null;
 }
 
+function notifyAutoClassifyDone() {
+  if (typeof chrome !== "undefined" && chrome.runtime && window.location.search.indexOf("auto=1") !== -1) {
+    try {
+      chrome.runtime.sendMessage({ type: "CLASSIFY_DONE" });
+    } catch (_) {}
+  }
+}
+
 async function run() {
+  try {
   const items = await chrome.storage.local.get([CLASSIFY_PENDING_KEY, "kg_labels"]);
   const text = items[CLASSIFY_PENDING_KEY];
   const kgLabels = items.kg_labels;
@@ -63,6 +72,12 @@ async function run() {
   const labelList = useKgLabels
     ? kgLabels.map((n) => n.label).filter(Boolean).join(", ")
     : FALLBACK_CATEGORIES.join(", ");
+  const conceptsWithDescriptions = useKgLabels && kgLabels.length > 0
+    ? kgLabels.map((n) => {
+        const desc = (n.description || "").trim().slice(0, 80);
+        return desc ? `${n.label}: ${desc}` : (n.label || "");
+      }).filter(Boolean)
+    : [];
   if (!labelList) {
     const msg = "No labels loaded. In Options, log in to the backend, select a course, and click Refresh knowledge graph.";
     setStatus(msg, "error");
@@ -142,19 +157,30 @@ async function run() {
   if (cancelBtn) {
     cancelBtn.onclick = () => cancelReject(new Error("Cancelled"));
   }
+  const contentSnippet = text.slice(0, 800);
   const prompt = useKgLabels
-    ? `You are classifying educational content against a knowledge graph. Given the text below, identify which concept from the list it most closely relates to. Reply with ONLY the concept label, nothing else.\n\nConcepts: ${labelList}\n\nContent:\n${text.slice(0, 6000)}`
-    : `Classify the following content into exactly one of these categories. Reply with only the category name, nothing else.\n\nCategories: ${labelList}\n\nContent:\n${text.slice(0, 6000)}`;
+    ? (conceptsWithDescriptions.length > 0
+      ? `Pick exactly one concept that best matches the content. Reply with ONLY that concept's label, exactly as written below. No explanation, no prefix.\n\nConcepts:\n${conceptsWithDescriptions.map((c) => `- ${c}`).join("\n")}\n\nContent:\n${contentSnippet}`
+      : `Pick exactly one concept that best matches the content. Reply with ONLY that concept's label, exactly as written in this list: ${labelList}\n\nContent:\n${contentSnippet}`)
+    : `Classify into exactly one category. Reply with only the category name, nothing else.\n\nCategories: ${labelList}\n\nContent:\n${contentSnippet}`;
   try {
-    const result = await withTimeout(
+    const rawResult = await withTimeout(
       Promise.race([session.prompt(prompt), cancelPromise]),
       PROMPT_TIMEOUT_MS,
       "Classification timed out"
     );
     session.destroy();
-    const trimmed = (result || "").trim();
+    const result = typeof rawResult === "string" ? rawResult : (rawResult && typeof rawResult.text === "string" ? rawResult.text : String(rawResult || ""));
+    let trimmed = result.trim();
+    trimmed = trimmed.replace(/^(concept|label|topic|category):\s*/i, "").trim();
     const categories = useKgLabels ? kgLabels.map((n) => n.label) : FALLBACK_CATEGORIES;
-    const match = categories.find((c) => c && trimmed.toLowerCase().includes(String(c).toLowerCase()));
+    let match = categories.find((c) => c && String(c).toLowerCase() === trimmed.toLowerCase());
+    if (!match) {
+      match = categories.find((c) => c && trimmed.toLowerCase().includes(String(c).toLowerCase()));
+    }
+    if (!match && trimmed) {
+      match = categories.find((c) => c && String(c).toLowerCase().includes(trimmed.toLowerCase()));
+    }
     const matchedLabel = match || trimmed || "(unknown)";
     const matchedNode = useKgLabels && kgLabels.find((n) => n.label && String(n.label).toLowerCase() === matchedLabel.toLowerCase());
     const resultMessage = "Concept: " + matchedLabel;
@@ -178,6 +204,16 @@ async function run() {
     cancelBtn.hidden = true;
     cancelBtn.onclick = null;
   }
+  } finally {
+    notifyAutoClassifyDone();
+  }
 }
 
-run();
+run().catch(async (err) => {
+  const msg = err && err.message ? err.message : "Classification failed.";
+  try {
+    await chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: { message: msg, error: true } });
+  } catch (_) {}
+  setStatus(msg, "error");
+  notifyAutoClassifyDone();
+});

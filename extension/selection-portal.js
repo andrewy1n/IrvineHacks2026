@@ -13,6 +13,7 @@
   const SIDEBAR_WIDTH_MIN = 320;
   const SIDEBAR_WIDTH_MAX = 450;
   const SIDEBAR_WIDTH_DEFAULT = 380;
+  const AUTO_CLASSIFY_FIRST_PARAGRAPH_MAX_CHARS = 600;
 
   let fab = null;
   let toggleFab = null;
@@ -61,6 +62,35 @@
     } catch (_) {}
     const sel = doc.getSelection ? doc.getSelection() : (window.getSelection && window.getSelection());
     return sel ? sel.toString().trim() : "";
+  }
+
+  function getFirstSectionText(source) {
+    if (!source) return null;
+    try {
+      if (source.fullText) {
+        const raw = (source.fullText || "").trim();
+        const firstParagraph = raw.split(/\n\s*\n/)[0].trim();
+        const t = firstParagraph.slice(0, AUTO_CLASSIFY_FIRST_PARAGRAPH_MAX_CHARS);
+        return t.length >= 10 ? t : null;
+      }
+      if (source.questions && source.questions.length) {
+        const q = source.questions[0];
+        const questionOnly = (q.question || "").trim().slice(0, AUTO_CLASSIFY_FIRST_PARAGRAPH_MAX_CHARS);
+        return questionOnly.length >= 10 ? questionOnly : null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function triggerAutoClassify(source) {
+    const text = getFirstSectionText(source);
+    if (!text) return;
+    try {
+      chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text }, () => {
+        const url = chrome.runtime.getURL("classify.html?auto=1");
+        safeSendMessage({ type: "OPEN_TAB", url }, () => {});
+      });
+    } catch (_) {}
   }
 
   function loadPersistedState(cb) {
@@ -467,7 +497,9 @@
         display += "\nMastery: " + pct + "%";
       }
       classifyResult.textContent = display;
-      classifyResult.className = "sidebar-classify-result" + (payload.error ? " error" : "");
+      classifyResult.className = "sidebar-classify-result" +
+        (payload.error ? " error" : "") +
+        (payload.pending ? " pending" : "");
       classifyResult.style.display = "block";
     }
 
@@ -481,6 +513,7 @@
       classifyResult.textContent = "Classifying…";
       classifyResult.className = "sidebar-classify-result pending";
       classifyResult.style.display = "block";
+      startClassifyTimeout();
       try {
         chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text }, () => {
           const url = chrome.runtime.getURL("classify.html");
@@ -912,16 +945,70 @@
     applyStudyMode(data[STUDY_MODE_KEY]);
   });
 
+  let autoClassifyDebounceTimer = null;
+  var lastClassifiedPageKey = null;
+  var classifyTimeoutId = null;
+  function clearClassifyTimeout() {
+    if (classifyTimeoutId) {
+      clearTimeout(classifyTimeoutId);
+      classifyTimeoutId = null;
+    }
+  }
+  function startClassifyTimeout() {
+    clearClassifyTimeout();
+    classifyTimeoutId = setTimeout(function () {
+      classifyTimeoutId = null;
+      if (sidebarHost && sidebarHost.updateClassifyResult) {
+        sidebarHost.updateClassifyResult({ message: "Classification timed out. Try again or use Classify with AI.", error: true });
+      }
+    }, 50000);
+  }
+  function getPageKey(data) {
+    if (!data) return null;
+    return (data.url || "") + "|" + (data.title || "");
+  }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[STUDY_MODE_KEY]) {
       applyStudyMode(changes[STUDY_MODE_KEY].newValue);
     }
-    if ((changes[OPENSTAX_STORAGE_KEY] || changes[QUIZ_STORAGE_KEY]) && sidebarHost && sidebarHost.refreshVisibleText && sidebarShowVisibleSection) {
-      sidebarHost.refreshVisibleText();
+    if (changes[OPENSTAX_STORAGE_KEY] || changes[QUIZ_STORAGE_KEY]) {
+      if (sidebarHost && sidebarHost.refreshVisibleText && sidebarShowVisibleSection) {
+        sidebarHost.refreshVisibleText();
+      }
+      var newValue = changes[OPENSTAX_STORAGE_KEY] ? changes[OPENSTAX_STORAGE_KEY].newValue : changes[QUIZ_STORAGE_KEY].newValue;
+      if (newValue && studyModeEnabled) {
+        var pageKey = getPageKey(newValue);
+        if (pageKey === lastClassifiedPageKey) return;
+        if (autoClassifyDebounceTimer) clearTimeout(autoClassifyDebounceTimer);
+        autoClassifyDebounceTimer = setTimeout(function () {
+          autoClassifyDebounceTimer = null;
+          var currentKey = getPageKey(newValue);
+          if (currentKey === lastClassifiedPageKey) return;
+          lastClassifiedPageKey = currentKey;
+          if (sidebarHost && sidebarHost.updateClassifyResult) {
+            sidebarHost.updateClassifyResult({ message: "Classifying…", pending: true });
+            startClassifyTimeout();
+          }
+          triggerAutoClassify(newValue);
+        }, 600);
+      }
     }
     if (changes[CLASSIFY_RESULT_KEY] && sidebarHost && sidebarHost.updateClassifyResult) {
+      clearClassifyTimeout();
       sidebarHost.updateClassifyResult(changes[CLASSIFY_RESULT_KEY].newValue);
     }
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState !== "visible") return;
+    if (!sidebarHost || !sidebarHost.updateClassifyResult) return;
+    safeStorageGet([CLASSIFY_RESULT_KEY], function (data) {
+      var last = data[CLASSIFY_RESULT_KEY];
+      if (last && last.message && !last.pending) {
+        clearClassifyTimeout();
+        sidebarHost.updateClassifyResult(last);
+      }
+    });
   });
 })();

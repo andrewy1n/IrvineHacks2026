@@ -27,6 +27,17 @@
   const OPENSTAX_SKIP_PATTERNS = /citation|attribution|order a print|© |creative commons|skip to content/i;
   const OPENSTAX_VISIBLE_THRESHOLD = 0.5;
   const OPENSTAX_SELECTORS = ".os-content p, .os-content h2, .os-content h3, .os-content h4, main p, main h2, main h3, main h4, [role='main'] p, [role='main'] h2, [role='main'] h3, [role='main'] h4";
+  const OPENSTAX_HEADING_TAGS = /^H[2-4]$/i;
+  const OPENSTAX_SIDEBAR_SELECTORS = "nav, aside, [role='navigation'], .toc, .sidebar, .nav, [class*='toc'], [class*='sidebar'], [class*='navigation']";
+
+  function isInsideSidebarOrNav(el) {
+    if (!el || !el.closest) return false;
+    try {
+      return !!el.closest(OPENSTAX_SIDEBAR_SELECTORS);
+    } catch (_) {
+      return false;
+    }
+  }
 
   function getPageTitle() {
     const titleEl = document.querySelector("main h1, .os-content h1, h1");
@@ -59,27 +70,44 @@
     } catch (_) {}
   }
 
+  function getVisibleRatio(el) {
+    const rect = el.getBoundingClientRect();
+    const viewHeight = window.innerHeight;
+    const viewWidth = window.innerWidth;
+    const visibleTop = Math.max(rect.top, 0);
+    const visibleBottom = Math.min(rect.bottom, viewHeight);
+    const visibleLeft = Math.max(rect.left, 0);
+    const visibleRight = Math.min(rect.right, viewWidth);
+    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+    const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+    if (!rect.height || !rect.width) return 0;
+    return (visibleHeight * visibleWidth) / (rect.height * rect.width);
+  }
+
   function getCurrentlyVisibleOpenStaxText() {
     const elements = document.querySelectorAll(OPENSTAX_SELECTORS);
     const viewHeight = window.innerHeight;
-    const viewWidth = window.innerWidth;
-    const visibleTexts = [];
+    const inMainOnly = [];
     elements.forEach((el) => {
+      if (isInsideSidebarOrNav(el)) return;
       const text = (el.innerText || el.textContent || "").trim();
       if (!text || OPENSTAX_SKIP_PATTERNS.test(text)) return;
-      const rect = el.getBoundingClientRect();
-      const visibleTop = Math.max(rect.top, 0);
-      const visibleBottom = Math.min(rect.bottom, viewHeight);
-      const visibleLeft = Math.max(rect.left, 0);
-      const visibleRight = Math.min(rect.right, viewWidth);
-      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-      const visibleWidth = Math.max(0, visibleRight - visibleLeft);
-      const visibleRatio = rect.height && rect.width
-        ? (visibleHeight * visibleWidth) / (rect.height * rect.width)
-        : 0;
-      if (visibleRatio >= OPENSTAX_VISIBLE_THRESHOLD) visibleTexts.push(text);
+      const ratio = getVisibleRatio(el);
+      if (ratio < OPENSTAX_VISIBLE_THRESHOLD) return;
+      inMainOnly.push({ el, text, ratio, top: el.getBoundingClientRect().top, isHeading: OPENSTAX_HEADING_TAGS.test(el.tagName || "") });
     });
-    return visibleTexts.join("\n\n");
+    if (inMainOnly.length === 0) return "";
+    inMainOnly.sort((a, b) => a.top - b.top);
+    let startIndex = 0;
+    const firstHeadingIdx = inMainOnly.findIndex((x) => x.isHeading);
+    if (firstHeadingIdx >= 0) startIndex = firstHeadingIdx;
+    const sectionTexts = [];
+    for (let i = startIndex; i < inMainOnly.length; i++) {
+      const item = inMainOnly[i];
+      if (item.isHeading && i > startIndex) break;
+      sectionTexts.push(item.text);
+    }
+    return sectionTexts.join("\n\n");
   }
 
   function observeNewElements(observer) {
@@ -92,32 +120,38 @@
     });
   }
 
+  function clearOpenStaxState() {
+    if (currentViewportObserver) {
+      currentViewportObserver.disconnect();
+      currentViewportObserver = null;
+    }
+    if (currentMutationObserver) {
+      currentMutationObserver.disconnect();
+      currentMutationObserver = null;
+    }
+    openStaxVisibleBuffer.clear();
+    viewedSectionsHistory = [];
+    viewedSectionsSet.clear();
+    try {
+      chrome.storage.local.remove(OPENSTAX_STORAGE_KEY);
+    } catch (_) {}
+  }
+
   function setupOpenStaxVisibleObserver() {
     // Tear down previous observers if re-initializing after SPA navigation
     if (currentViewportObserver) currentViewportObserver.disconnect();
     if (currentMutationObserver) currentMutationObserver.disconnect();
 
     openStaxVisibleBuffer.clear();
+    viewedSectionsHistory = [];
+    viewedSectionsSet.clear();
     let studyTimer = null;
     lastObservedUrl = window.location.href;
 
-    const viewportObserver = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        const text = (entry.target.innerText || entry.target.textContent || "").trim();
-        if (!text || OPENSTAX_SKIP_PATTERNS.test(text)) return;
-
-        if (entry.isIntersecting) {
-          openStaxVisibleBuffer.add(text);
-          addToHistory(text);
-        } else {
-          openStaxVisibleBuffer.delete(text);
-        }
-      });
-
-      // Trigger on any intersection change (enter or leave)
+    const viewportObserver = new IntersectionObserver(() => {
       clearTimeout(studyTimer);
       studyTimer = setTimeout(() => {
-        const activeText = Array.from(openStaxVisibleBuffer).join("\n\n");
+        const activeText = getCurrentlyVisibleOpenStaxText();
         if (activeText) saveVisibleOpenStaxPayload(activeText);
       }, 1000);
     }, { root: null, rootMargin: "0px", threshold: OPENSTAX_VISIBLE_THRESHOLD });
@@ -132,15 +166,7 @@
     mutationObserver.observe(document.body, { childList: true, subtree: true });
     currentMutationObserver = mutationObserver;
 
-    // Seed buffer and history with whatever is currently visible
-    getCurrentlyVisibleOpenStaxText()
-      .split("\n\n")
-      .filter(Boolean)
-      .forEach((t) => {
-        openStaxVisibleBuffer.add(t);
-        addToHistory(t);
-      });
-    const initialText = Array.from(openStaxVisibleBuffer).join("\n\n");
+    const initialText = getCurrentlyVisibleOpenStaxText();
     if (initialText) saveVisibleOpenStaxPayload(initialText);
   }
 
@@ -148,8 +174,9 @@
   function watchForSpaNavigation() {
     const check = () => {
       if (window.location.href !== lastObservedUrl) {
-        // Wait for new DOM content to settle before re-observing
-        setTimeout(setupOpenStaxVisibleObserver, 800);
+        clearOpenStaxState();
+        lastObservedUrl = window.location.href;
+        setTimeout(setupOpenStaxVisibleObserver, 1200);
       }
     };
     // Patch pushState/replaceState since OpenStax uses the History API
