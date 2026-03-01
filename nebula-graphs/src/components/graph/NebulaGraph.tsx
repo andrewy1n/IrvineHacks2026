@@ -507,6 +507,16 @@ export default function NebulaGraph({
                     ? 1.08
                     : 1
                 : 0;
+                
+              const isMastered = node.confidence === 1.0;
+              const glowBoxShadow = isMastered 
+                ? "0 0 24px rgba(16,185,129,0.6), 0 4px 12px rgba(16,185,129,0.3), inset 0 0 10px rgba(16,185,129,0.2)"
+                : isInSet
+                  ? "0 0 24px rgba(197,174,121,0.25), 0 4px 12px rgba(197,174,121,0.12)"
+                  : isActive
+                    ? "0 0 20px rgba(197,174,121,0.21), 0 4px 12px rgba(197,174,121,0.09)"
+                    : "0 0 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3)";
+
               return (
                 <motion.div
                   key={node.id}
@@ -537,12 +547,10 @@ export default function NebulaGraph({
                       ? `2.5px solid ${glowColorHex}`
                       : isActive
                         ? "2.5px solid var(--gold)"
-                        : `2px solid ${borderColor}`,
-                    boxShadow: isInSet
-                      ? "0 0 24px rgba(197,174,121,0.25), 0 4px 12px rgba(197,174,121,0.12)"
-                      : isActive
-                        ? "0 0 20px rgba(197,174,121,0.21), 0 4px 12px rgba(197,174,121,0.09)"
-                        : "0 0 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3)",
+                        : isMastered
+                          ? `3px solid ${borderColor}` // Thicker border for feynman
+                          : `2px solid ${borderColor}`,
+                    boxShadow: glowBoxShadow,
                   }}
                 >
                   <div
@@ -642,20 +650,24 @@ export default function NebulaGraph({
           <div className="h-px bg-gray-800 my-1" />
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" style={{ backgroundColor: "#059669" }} />
+              <span className="text-gray-300">Feynman</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#28a745" }} />
+              <span className="text-gray-300">Synthesis</span>
+            </div>
+            <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#34C759" }} />
-              <span className="text-gray-300">Mastered</span>
+              <span className="text-gray-300">Recall</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#FFCC00" }} />
-              <span className="text-gray-300">On Track</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#FF9500" }} />
-              <span className="text-gray-300">Building</span>
+              <span className="text-gray-300">Exposure</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#FF3B30" }} />
-              <span className="text-gray-300">Developing</span>
+              <span className="text-gray-300">Struggling</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full border border-gray-500 bg-gray-500/20" />

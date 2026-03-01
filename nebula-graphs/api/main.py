@@ -83,6 +83,9 @@ class CourseCreate(BaseModel):
     name: str
 
 class MasteryUpdate(BaseModel):
+    task_type: Optional[str] = None  # "mcq" | "written" | "feynman"
+    student_answer: Optional[str] = None
+    question_context: Optional[str] = None
     eval_result: Optional[str] = None  # "correct" | "partial" | "wrong"
     delta: Optional[float] = None
     # Optional problem data for storing solved problems (solve + sync)
@@ -153,6 +156,16 @@ Requirements:
 
 Return ONLY the JSON object.
 """
+
+WRITTEN_PROMPT = """Generate a short-answer written question to test deep understanding of: {label}
+Description: {description}
+
+The question should require the student to synthesize their knowledge (e.g. "Explain how X is used in Y" or "Why is X important for Y?").
+
+Respond ONLY with valid JSON:
+{{
+  "question": "string"
+}}"""
 
 POLL_PROMPT = """Generate a multiple-choice question to test understanding of: {label}
 Description: {description}
@@ -590,18 +603,73 @@ def update_mastery(
     
     current = node.confidence
 
-    # Question-answer mastery: correct +0–10%, wrong -0–10%, partial +5%
-    # Reading passively (delta) can only increase mastery up to 30% max
+    # 4-tier mastery logic
+    if req.task_type == "feynman" and req.student_answer:
+        # Evaluate verbally transcribed answer
+        prompt = f"""Evaluate the student's verbal explanation of the concept '{node.label}'.
+Concept Description: {node.description}
+Student Transcript: {req.student_answer}
+
+Did the student explain this concept clearly and correctly?
+Respond ONLY with valid JSON:
+{{"eval_result": "correct|partial|wrong", "feedback": "Brief 1-sentence feedback"}}"""
+        
+        try:
+            raw = call_llm(prompt)
+            result = parse_json_response(raw)
+            if result.get("eval_result") == "correct":
+                node.confidence = 1.0  # Feynman mastery!
+            return {"concept_id": node.id, "confidence": node.confidence, "feedback": result.get("feedback", "")}
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+    elif req.task_type == "written" and req.student_answer:
+        # Evaluate written answer
+        prompt = f"""Evaluate the student's written answer for the concept '{node.label}'.
+Concept Description: {node.description}
+Question asked: {req.question_context or 'Explain this concept.'}
+Student Answer: {req.student_answer}
+
+Respond ONLY with valid JSON:
+{{"eval_result": "correct|partial|wrong", "feedback": "Brief 1-sentence feedback"}}"""
+        
+        try:
+            raw = call_llm(prompt)
+            result = parse_json_response(raw)
+            if result.get("eval_result") == "correct":
+                node.confidence = max(0.8, current)  # Synthesis mastery
+            elif result.get("eval_result") == "partial":
+                node.confidence = min(0.8, current + 0.1)
+            
+            # Optionally log this as a solved problem
+            if result.get("eval_result") in ["correct", "partial"]:
+                db.add(SolvedProblem(
+                    id=str(uuid.uuid4()),
+                    concept_id=concept_id,
+                    user_id=user_id,
+                    question=req.question_context or f"Explain {node.label}",
+                    options="[]",
+                    correct_answer="(Evaluated by AI)",
+                    user_answer=req.student_answer[:2000],
+                    eval_result=result.get("eval_result"),
+                ))
+            
+            db.commit()
+            return {"concept_id": node.id, "confidence": node.confidence, "feedback": result.get("feedback", "")}
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+    # Existing MCQ / Passive logic
     if req.eval_result:
         if req.eval_result == "correct":
-            node.confidence = min(1.0, current + 0.10)
+            node.confidence = max(0.6, min(1.0, current + 0.10))
         elif req.eval_result == "partial":
             node.confidence = min(1.0, current + 0.05)
         elif req.eval_result == "wrong":
             node.confidence = max(0.0, current - 0.10)
     elif req.delta is not None:
-        # Passive reading: cap at 30%
-        node.confidence = min(0.30, clamp(current + req.delta))
+        # Passive reading: cap at 0.4 for Exposure tier
+        node.confidence = min(0.40, clamp(current + req.delta))
 
     # Store solved problem for sync when problem data is provided
     if req.problem and req.eval_result:
@@ -820,6 +888,27 @@ def generate_poll(
         print(f"[WARN] LLM poll generation failed ({e}), using fallback")
         return _fallback_poll(node.label, node.description)
 
+
+@app.post("/api/concepts/{concept_id}/written-question")
+def generate_written_question(
+    concept_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Generate a short-answer written question for a concept (Tier 3)."""
+    node = db.query(ConceptNode).filter(ConceptNode.id == concept_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Concept not found")
+    
+    try:
+        raw = call_llm(
+            WRITTEN_PROMPT.format(label=node.label, description=node.description)
+        )
+        data = parse_json_response(raw)
+        return data
+    except Exception as e:
+        print(f"[WARN] LLM written question generation failed ({e}), using fallback")
+        return {"question": f"Explain '{node.label}' and how it works based on what you've learned."}
 
 @app.post("/api/concepts/{concept_id}/poll/evaluate")
 def evaluate_poll(

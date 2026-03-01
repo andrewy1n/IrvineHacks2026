@@ -408,11 +408,11 @@
       }
       .sidebar-classify-btn:hover { opacity: 0.9; }
       .sidebar-classify-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      .sidebar-refresh-kg-btn {
+      .sidebar-refresh-nebula-btn {
         background: transparent; color: #fafafa; border: 1px solid rgba(255, 255, 255, 0.2);
         margin-top: 8px;
       }
-      .sidebar-refresh-kg-btn:hover { background: rgba(255, 255, 255, 0.05); opacity: 1; }
+      .sidebar-refresh-nebula-btn:hover { background: rgba(255, 255, 255, 0.05); opacity: 1; }
       .sidebar-classify-result {
         padding: 12px 16px; font-size: 12px; line-height: 1.5;
         color: #d4d4d8; background: rgba(255, 255, 255, 0.05); border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -587,7 +587,7 @@
       overflow: hidden;
     `;
     
-    // Node visualization consistent with frontend KnowledgeGraph
+    // Node visualization consistent with frontend NebulaGraph
     fallbackVisual.innerHTML = `
       <div id="visual-concept-view" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">
         <div style="
@@ -937,17 +937,17 @@
     classifyBtn.type = "button";
     classifyBtn.className = "sidebar-classify-btn";
     classifyBtn.textContent = "Classify with AI";
-    const refreshKgBtn = document.createElement("button");
-    refreshKgBtn.type = "button";
-    refreshKgBtn.className = "sidebar-classify-btn sidebar-refresh-kg-btn";
-    refreshKgBtn.textContent = "Refresh knowledge graph";
-    refreshKgBtn.style.marginTop = "6px";
+    const refreshNebulaBtn = document.createElement("button");
+    refreshNebulaBtn.type = "button";
+    refreshNebulaBtn.className = "sidebar-classify-btn sidebar-refresh-nebula-btn";
+    refreshNebulaBtn.textContent = "Refresh knowledge graph";
+    refreshNebulaBtn.style.marginTop = "6px";
     const classifyResult = document.createElement("div");
     classifyResult.className = "sidebar-classify-result";
     classifyResult.textContent = "";
     classifyResult.style.display = "none";
     classifyWrap.appendChild(classifyBtn);
-    classifyWrap.appendChild(refreshKgBtn);
+    classifyWrap.appendChild(refreshNebulaBtn);
     classifyWrap.appendChild(classifyResult);
     visibleTextSection.appendChild(visibleTextPreview);
     visibleTextSection.appendChild(sectionsScrolledRow);
@@ -1138,13 +1138,13 @@
       } catch (_) {}
     });
 
-    refreshKgBtn.addEventListener("click", () => {
-      refreshKgBtn.disabled = true;
+    refreshNebulaBtn.addEventListener("click", () => {
+      refreshNebulaBtn.disabled = true;
       classifyResult.textContent = "Refreshing knowledge graph…";
       classifyResult.className = "sidebar-classify-result pending";
       classifyResult.style.display = "block";
       safeSendMessage({ type: "FETCH_KG_LABELS" }, (r) => {
-        refreshKgBtn.disabled = false;
+        refreshNebulaBtn.disabled = false;
         if (r && r.error) {
           classifyResult.textContent = "KG: " + r.error;
           classifyResult.className = "sidebar-classify-result error";

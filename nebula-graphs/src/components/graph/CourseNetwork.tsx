@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import * as d3 from "d3";
 import { motion } from "motion/react";
 import useMeasure from "react-use-measure";
-import { formatLastUpdated } from "@/lib/utils";
 
 import { Trash2 } from "lucide-react";
 

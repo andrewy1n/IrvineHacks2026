@@ -16,7 +16,7 @@ document.getElementById("save").onclick = () => {
   });
 };
 
-// --- Backend (kg-mastery API) ---
+// --- Backend (nebula-graphs API) ---
 const backendEmail = document.getElementById("backendEmail");
 const backendPassword = document.getElementById("backendPassword");
 const backendLoginBtn = document.getElementById("backendLogin");
@@ -24,7 +24,7 @@ const backendStatus = document.getElementById("backendStatus");
 const backendError = document.getElementById("backendError");
 const courseSelect = document.getElementById("courseSelect");
 const refreshCoursesBtn = document.getElementById("refreshCourses");
-const refreshKgBtn = document.getElementById("refreshKg");
+const refreshNebulaBtn = document.getElementById("refreshNebula");
 const conceptsListEl = document.getElementById("conceptsList");
 
 function showBackendStatus(msg, isError = false) {
@@ -129,13 +129,13 @@ courseSelect.addEventListener("change", () => {
   });
 });
 
-refreshKgBtn.addEventListener("click", async () => {
+refreshNebulaBtn.addEventListener("click", async () => {
   const courseId = courseSelect.value;
   if (!courseId) {
     showBackendStatus("Select a course first.", true);
     return;
   }
-  refreshKgBtn.disabled = true;
+  refreshNebulaBtn.disabled = true;
   showBackendStatus("Loading knowledge graph…");
   const { labels, error } = await new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: "FETCH_KG_LABELS", courseId }, (r) => {
@@ -149,7 +149,7 @@ refreshKgBtn.addEventListener("click", async () => {
     showBackendStatus(`Loaded ${(labels || []).length} concepts. You can now classify with AI.`);
     renderConceptsList(labels || []);
   }
-  refreshKgBtn.disabled = false;
+  refreshNebulaBtn.disabled = false;
 });
 
 function escapeHtml(text) {

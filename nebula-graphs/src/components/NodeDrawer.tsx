@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNebulaStore } from "@/store/nebulaStore";
 import type { SolvedProblem } from "@/lib/types";
+import { apiFetch } from "@/lib/utils";
+import confetti from "canvas-confetti";
 import {
   Sheet,
   SheetContent,
@@ -8,7 +10,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { PlayCircle, ExternalLink, ShieldCheck, Loader2, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { PlayCircle, ExternalLink, ShieldCheck, Loader2, FileText, ChevronDown, ChevronUp, Mic, Square, CheckCircle, Brain, BookOpen } from "lucide-react";
+import Spline from "@splinetool/react-spline";
 
 function SolvedQuestionCard({ sp }: { sp: SolvedProblem }) {
   const [expanded, setExpanded] = useState(false);
@@ -76,28 +80,133 @@ export default function NodeDrawer() {
   const pollLoading = useNebulaStore((s) => s.pollLoading);
   const pollModalOpen = useNebulaStore((s) => s.pollModalOpen);
   const generatePoll = useNebulaStore((s) => s.generatePoll);
-  const updateMasteryDelta = useNebulaStore((s) => s.updateMasteryDelta);
+  const submitWritten = useNebulaStore((s) => s.submitWritten);
+  const submitFeynman = useNebulaStore((s) => s.submitFeynman);
   const solvedProblems = useNebulaStore((s) => s.solvedProblems);
   const solvedProblemsLoading = useNebulaStore((s) => s.solvedProblemsLoading);
+
+  const [writtenQuestion, setWrittenQuestion] = useState("");
+  const [writtenAnswer, setWrittenAnswer] = useState("");
+  const [fetchingWritten, setFetchingWritten] = useState(false);
+  const [submittingWritten, setSubmittingWritten] = useState(false);
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [submittingFeynman, setSubmittingFeynman] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+      setWrittenQuestion("");
+      setWrittenAnswer("");
+      setTranscript("");
+      setIsRecording(false);
+      if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch (e) {}
+      }
+  }, [selectedNode?.id]);
+
+  const handleFetchWritten = async () => {
+      if (!selectedNode) return;
+      setFetchingWritten(true);
+      try {
+          const res = await apiFetch(`/api/concepts/${selectedNode.id}/written-question`, { method: "POST" });
+          if (res.ok) {
+              const data = await res.json();
+              setWrittenQuestion(data.question);
+          }
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setFetchingWritten(false);
+      }
+  };
+
+  const handleSubmitWritten = async () => {
+      if (!selectedNode || !writtenAnswer.trim()) return;
+      setSubmittingWritten(true);
+      await submitWritten(selectedNode.id, writtenAnswer, writtenQuestion);
+      setSubmittingWritten(false);
+      setWrittenAnswer("");
+      setWrittenQuestion("");
+  };
+
+  const toggleRecording = () => {
+      if (isRecording) {
+          if (recognitionRef.current) recognitionRef.current.stop();
+          setIsRecording(false);
+      } else {
+          setTranscript("");
+          // @ts-ignore
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (SpeechRecognition) {
+              const recognition = new SpeechRecognition();
+              recognition.continuous = true;
+              recognition.interimResults = true;
+              recognition.onresult = (event: any) => {
+                  let currentTranscript = '';
+                  for (let i = 0; i < event.results.length; i++) {
+                      currentTranscript += event.results[i][0].transcript;
+                  }
+                  setTranscript(currentTranscript);
+              };
+              recognition.onend = () => {
+                  setIsRecording(false);
+              };
+              recognition.start();
+              recognitionRef.current = recognition;
+              setIsRecording(true);
+          } else {
+              alert("Speech recognition not supported in this browser.");
+          }
+      }
+  };
+
+  const handleSubmitFeynman = async () => {
+      if (!selectedNode || !transcript.trim()) return;
+      if (isRecording && recognitionRef.current) {
+          recognitionRef.current.stop();
+          setIsRecording(false);
+      }
+      setSubmittingFeynman(true);
+      await submitFeynman(selectedNode.id, transcript);
+      
+      // Check if it reached 1.0 after submission
+      const updatedNode = useNebulaStore.getState().selectedNode;
+      if (updatedNode && updatedNode.confidence === 1.0) {
+          confetti({
+              particleCount: 150,
+              spread: 70,
+              origin: { y: 0.6 },
+              colors: ['#10b981', '#34d399', '#059669', '#ffffff']
+          });
+      }
+      
+      setSubmittingFeynman(false);
+      setTranscript("");
+  };
 
   const node = selectedNode;
 
   if (!node) return null;
 
+  const conf = node.confidence ?? 0;
   let badgeText = "⚪ Not Started";
   let badgeClass = "bg-white/10 text-white border-white/20";
-  if (node.confidence > 0 && node.confidence < 0.4) {
-    badgeText = "🔴 Developing";
+  if (conf > 0 && conf < 0.4) {
+    badgeText = "🔴 Struggling";
     badgeClass = "bg-red-500/20 text-red-100 border-red-500/40";
-  } else if (node.confidence >= 0.4 && node.confidence < 0.55) {
-    badgeText = "🟠 Building";
-    badgeClass = "bg-orange-500/20 text-orange-100 border-orange-500/40";
-  } else if (node.confidence >= 0.55 && node.confidence < 0.7) {
-    badgeText = "🟡 On Track";
+  } else if (conf >= 0.4 && conf < 0.6) {
+    badgeText = "🟡 Exposure";
     badgeClass = "bg-yellow-500/20 text-yellow-100 border-yellow-500/40";
-  } else if (node.confidence >= 0.7) {
-    badgeText = "🟢 Mastered";
-    badgeClass = "bg-white/20 text-white border-white/40";
+  } else if (conf >= 0.6 && conf < 0.8) {
+    badgeText = "🟢 Recall";
+    badgeClass = "bg-emerald-500/20 text-emerald-100 border-emerald-500/40";
+  } else if (conf >= 0.8 && conf < 1.0) {
+    badgeText = "🟢 Synthesis";
+    badgeClass = "bg-green-500/30 text-green-100 border-green-500/50";
+  } else if (conf === 1.0) {
+    badgeText = "🌟 Feynman";
+    badgeClass = "bg-emerald-600/40 text-emerald-50 border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.5)]";
   }
 
   return (
@@ -151,6 +260,13 @@ export default function NodeDrawer() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="group flex cursor-pointer items-center rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-all hover:border-white/30 hover:bg-white/[0.08] shadow-inner backdrop-blur-md"
+                        onClick={() => {
+                          if (conf < 0.4 && node.id) {
+                            // Automatically bump confidence to 0.4 (Exposure -> Building/Recall tier)
+                            // when user starts reading the material.
+                            useNebulaStore.getState().updateMasteryDelta(node.id, 0.4);
+                          }
+                        }}
                       >
                         {r.type === "video" ? (
                           <PlayCircle className="mr-3 h-6 w-6 shrink-0 text-white group-hover:scale-110 transition-transform" />
@@ -198,18 +314,140 @@ export default function NodeDrawer() {
         </div>
 
         <div className="sticky bottom-0 border-t border-white/10 bg-white/[0.02] p-6 backdrop-blur-xl">
-          <Button
-            className="mb-4 h-12 w-full font-medium tracking-widest uppercase text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] bg-white/10 border border-white/20 hover:bg-white/20 hover:border-white/50 backdrop-blur-md"
-            onClick={() => generatePoll(node.id)}
-            disabled={pollLoading}
-          >
-            {pollLoading ? (
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            ) : (
-              <ShieldCheck className="mr-2 h-5 w-5" />
-            )}
-            Generate Question
-          </Button>
+          {conf < 0.4 && (
+            <div className="text-center p-4 bg-white/5 rounded-xl border border-white/10">
+              <BookOpen className="w-6 h-6 text-white/50 mx-auto mb-2" />
+              <p className="text-sm text-white/80">Read your notes or canvas resources to unlock practice.</p>
+            </div>
+          )}
+
+          {conf >= 0.4 && conf < 0.6 && (
+            <Button
+              className="mb-4 h-12 w-full font-medium tracking-widest uppercase text-white shadow-[0_4px_16px_rgba(0,0,0,0.2)] transition-all hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] bg-white/10 border border-white/20 hover:bg-white/20 hover:border-white/50 backdrop-blur-md"
+              onClick={() => generatePoll(node.id)}
+              disabled={pollLoading}
+            >
+              {pollLoading ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <ShieldCheck className="mr-2 h-5 w-5" />
+              )}
+              Generate Question
+            </Button>
+          )}
+
+          {conf >= 0.6 && conf < 0.8 && (
+            <div className="space-y-4">
+              <h4 className="text-sm font-medium uppercase tracking-widest text-white/80 flex items-center gap-2">
+                <Brain className="w-4 h-4 text-emerald-400" />
+                Synthesis Challenge
+              </h4>
+              {!writtenQuestion ? (
+                <Button
+                  className="w-full h-10 bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                  onClick={handleFetchWritten}
+                  disabled={fetchingWritten}
+                >
+                  {fetchingWritten ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                  Get Synthesis Prompt
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-white/90 bg-white/5 p-3 rounded-lg border border-white/10">{writtenQuestion}</p>
+                  <Textarea 
+                    value={writtenAnswer}
+                    onChange={(e) => setWrittenAnswer(e.target.value)}
+                    placeholder="Write your explanation here..."
+                    className="bg-black/20 border-white/20 text-white min-h-[100px]"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      className="text-xs text-white/50 hover:text-white"
+                      onClick={() => {
+                        setWrittenQuestion("");
+                        setWrittenAnswer("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1 h-10 bg-emerald-600/50 hover:bg-emerald-500/60 text-white"
+                      onClick={handleSubmitWritten}
+                      disabled={submittingWritten || !writtenAnswer.trim()}
+                    >
+                      {submittingWritten ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                      Submit Answer
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {conf >= 0.8 && (
+            <div className="space-y-4">
+              <h4 className="text-sm font-medium uppercase tracking-widest text-white/80 flex items-center gap-2">
+                <Mic className="w-4 h-4 text-emerald-400" />
+                Feynman Voice Challenge
+              </h4>
+              
+              {/* Optional Success state instead of inputs */}
+              {conf === 1.0 && !isRecording && !transcript && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl text-center">
+                      <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+                          <CheckCircle className="w-6 h-6 text-emerald-400" />
+                      </div>
+                      <p className="text-emerald-100 font-medium tracking-wide">Elite Mastery Achieved</p>
+                      <p className="text-xs text-emerald-300/70 mt-1">You have successfully explained this concept.</p>
+                      <Button 
+                          variant="ghost" 
+                          className="mt-3 text-xs text-white/50 hover:text-white"
+                          onClick={() => {
+                              // Reset to allow re-trying
+                              setTranscript("");
+                          }}
+                      >
+                          Try again
+                      </Button>
+                  </div>
+              )}
+
+              {/* Show recording UI if not mastered, OR if user wants to try again (indicated by interaction) */}
+              {(conf < 1.0 || isRecording || transcript) && (
+                  <>
+                      <div className="relative h-48 rounded-xl overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center">
+                        <Spline scene="/assets/rememberall_robot.spline" className="w-full h-full" />
+                        {isRecording && (
+                           <div className="absolute top-3 right-3 flex items-center gap-2 bg-red-500/20 text-red-200 px-2 py-1 rounded-full border border-red-500/30 text-xs animate-pulse">
+                             <div className="w-2 h-2 rounded-full bg-red-500" />
+                             Recording
+                           </div>
+                        )}
+                      </div>
+                      <div className="bg-black/20 border border-white/10 rounded-lg p-3 min-h-[60px] max-h-[120px] overflow-y-auto text-sm text-white/80">
+                        {transcript || <span className="text-white/30 italic">Start speaking to explain this concept...</span>}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          className={`flex-1 h-10 ${isRecording ? 'bg-red-500/50 hover:bg-red-500/60 text-white' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'}`}
+                          onClick={toggleRecording}
+                        >
+                          {isRecording ? <Square className="w-4 h-4 mr-2 fill-current" /> : <Mic className="w-4 h-4 mr-2" />}
+                          {isRecording ? "Stop Recording" : "Start Speaking"}
+                        </Button>
+                        <Button
+                          className="h-10 bg-emerald-600/50 hover:bg-emerald-500/60 text-white w-24"
+                          onClick={handleSubmitFeynman}
+                          disabled={submittingFeynman || !transcript.trim()}
+                        >
+                          {submittingFeynman ? <Loader2 className="w-4 h-4 animate-spin" /> : "Submit"}
+                        </Button>
+                      </div>
+                  </>
+              )}
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

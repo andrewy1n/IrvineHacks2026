@@ -37,6 +37,8 @@ interface NebulaState {
     fetchSolvedProblems: (conceptId: string, forceRefresh?: boolean) => Promise<void>;
     generatePoll: (conceptId: string) => Promise<void>;
     updateMastery: (conceptId: string, evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => Promise<void>;
+    submitWritten: (conceptId: string, studentAnswer: string, questionContext: string) => Promise<void>;
+    submitFeynman: (conceptId: string, studentAnswer: string) => Promise<void>;
     updateMasteryDelta: (conceptId: string, delta: number) => Promise<void>;
     setPollModalOpen: (open: boolean) => void;
     setGraphData: (data: GraphData) => void;
@@ -179,7 +181,7 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
 
     updateMastery: async (conceptId: string, evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => {
         try {
-            const body: { eval_result: string; problem?: object } = { eval_result: evalResult };
+            const body: { eval_result: string; task_type: string; problem?: object } = { eval_result: evalResult, task_type: "mcq" };
             if (problem) body.problem = problem;
             const res = await apiFetch(`/api/mastery/${conceptId}`, {
                 method: "PUT",
@@ -187,7 +189,6 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
             });
             if (res.ok) {
                 const data = await res.json();
-                // Update the node confidence in the graph
                 set((state) => {
                     if (!state.graphData) return {};
                     const nodes = state.graphData.nodes.map((n) =>
@@ -200,6 +201,64 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
                     };
                 });
                 if (problem) await get().fetchSolvedProblems(conceptId, true);
+            }
+        } catch {
+            // silent fail for MVP
+        }
+    },
+
+    submitWritten: async (conceptId: string, studentAnswer: string, questionContext: string) => {
+        try {
+            const res = await apiFetch(`/api/mastery/${conceptId}`, {
+                method: "PUT",
+                body: JSON.stringify({ 
+                    task_type: "written",
+                    student_answer: studentAnswer,
+                    question_context: questionContext
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                set((state) => {
+                    if (!state.graphData) return {};
+                    const nodes = state.graphData.nodes.map((n) =>
+                        n.id === conceptId ? { ...n, confidence: data.confidence } : n
+                    );
+                    const updatedNode = nodes.find((n) => n.id === conceptId) || null;
+                    return {
+                        graphData: { ...state.graphData, nodes },
+                        selectedNode: state.selectedNode?.id === conceptId ? updatedNode : state.selectedNode,
+                    };
+                });
+                await get().fetchSolvedProblems(conceptId, true);
+            }
+        } catch {
+            // silent fail for MVP
+        }
+    },
+
+    submitFeynman: async (conceptId: string, studentAnswer: string) => {
+        try {
+            const res = await apiFetch(`/api/mastery/${conceptId}`, {
+                method: "PUT",
+                body: JSON.stringify({ 
+                    task_type: "feynman",
+                    student_answer: studentAnswer
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                set((state) => {
+                    if (!state.graphData) return {};
+                    const nodes = state.graphData.nodes.map((n) =>
+                        n.id === conceptId ? { ...n, confidence: data.confidence } : n
+                    );
+                    const updatedNode = nodes.find((n) => n.id === conceptId) || null;
+                    return {
+                        graphData: { ...state.graphData, nodes },
+                        selectedNode: state.selectedNode?.id === conceptId ? updatedNode : state.selectedNode,
+                    };
+                });
             }
         } catch {
             // silent fail for MVP

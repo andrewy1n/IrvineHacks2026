@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch, getAuthToken, clearAuthToken } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -21,17 +20,7 @@ interface Course {
   id: string;
   name: string;
   created_at: string;
-}
-
-function formatLastUpdated(created_at: string): string {
-  const d = new Date(created_at);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return d.toLocaleDateString();
+  masteryPercentage?: number;
 }
 
 export default function Courses() {
