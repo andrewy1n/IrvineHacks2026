@@ -1,12 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Particles from "react-tsparticles";
-import { loadSlim } from "tsparticles-slim";
-import type { Engine } from "tsparticles-engine";
+import BackgroundCanvas from "@/components/BackgroundCanvas";
 import { API_BASE, setAuthToken } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Network } from "lucide-react";
+import { X } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -15,10 +14,6 @@ export default function Login() {
   const [isRegister, setIsRegister] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const particlesInit = useCallback(async (engine: Engine) => {
-    await loadSlim(engine);
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,106 +42,83 @@ export default function Login() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-[#050505] overflow-hidden">
-      <Particles
-        id="tsparticles"
-        init={particlesInit}
-        className="absolute inset-0 h-full w-full"
-        options={{
-          background: { color: { value: "transparent" } },
-          fpsLimit: 120,
-          interactivity: {
-            events: { onHover: { enable: true, mode: "grab" } },
-            modes: {
-              grab: { distance: 140, links: { opacity: 0.5 } },
-            },
-          },
-          particles: {
-            color: { value: "#ffffff" },
-            links: {
-              color: "#ffffff",
-              distance: 150,
-              enable: true,
-              opacity: 0.2,
-              width: 1,
-            },
-            move: {
-              direction: "none",
-              enable: true,
-              outModes: { default: "bounce" },
-              random: false,
-              speed: 0.5,
-              straight: false,
-            },
-            number: {
-              density: { enable: true, area: 800 },
-              value: 60,
-            },
-            opacity: { value: 0.2 },
-            shape: { type: "circle" },
-            size: { value: { min: 1, max: 2 } },
-          },
-          detectRetina: true,
-        }}
-      />
-      <div className="relative z-10 mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-black/40 p-8 shadow-2xl backdrop-blur-xl">
-        <div className="flex flex-col items-center text-center justify-center mb-8">
-          <div className="mb-4">
-            <Network className="w-10 h-10 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+    <div className="relative min-h-screen flex items-center justify-center bg-[#050505] overflow-hidden font-sans">
+      <BackgroundCanvas />
+      
+      {/* Glassmorphism Window */}
+      <div className="relative z-10 mx-4 w-full max-w-md rounded-xl border border-white/20 bg-white/[0.05] shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-md overflow-hidden">
+        {/* Window Title Bar */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-white/90 uppercase tracking-widest">Nebula</span>
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Nebula</h1>
-          <p className="text-zinc-400">Map your mind.</p>
+          <button className="text-white/50 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500 focus-visible:border-cyan-500 focus-visible:ring-1 focus-visible:ring-cyan-500 h-12 rounded-lg"
-            />
+        {/* Login Form Content */}
+        <div className="p-8 pt-6">
+          <div className="flex flex-col items-center justify-center pt-2 pb-4">
+            <Logo size="4xl" />
           </div>
-          <div className="space-y-4">
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={4}
-              className="bg-white/5 border-white/10 text-white placeholder:text-zinc-500 focus-visible:border-cyan-500 focus-visible:ring-1 focus-visible:ring-cyan-500 h-12 rounded-lg"
-            />
+          
+          <div className="text-center mb-8">
+            <h2 className="text-xl font-medium text-white tracking-wide uppercase">
+              {isRegister ? "Sign Up" : "Sign In"}
+            </h2>
           </div>
 
-          {error && (
-            <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-lg">
-              {error}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-1">
+              <Input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/40 focus-visible:border-white/50 focus-visible:ring-1 focus-visible:ring-white/50 h-11 rounded-lg backdrop-blur-sm transition-all hover:bg-white/[0.06] shadow-inner"
+              />
             </div>
-          )}
+            <div className="space-y-1">
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={4}
+                className="bg-white/[0.03] border-white/10 text-white placeholder:text-white/40 focus-visible:border-white/50 focus-visible:ring-1 focus-visible:ring-white/50 h-11 rounded-lg backdrop-blur-sm transition-all hover:bg-white/[0.06] shadow-inner"
+              />
+            </div>
 
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full h-12 mt-4 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 hover:border-cyan-500 hover:shadow-[0_0_15px_rgba(6,182,212,0.5)] transition-all text-white font-medium text-base rounded-lg"
-          >
-            {loading ? "Processing..." : isRegister ? "Create Account" : "Sign In"}
-          </Button>
-        </form>
+            {error && (
+              <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-lg backdrop-blur-md">
+                {error}
+              </div>
+            )}
 
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsRegister(!isRegister);
-              setError("");
-            }}
-            className="text-sm text-zinc-400 hover:text-white transition-colors"
-          >
-            {isRegister ? "Already have an account? Sign in" : "Don't have an account? Register"}
-          </button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full h-11 mt-2 bg-white/10 border border-white/20 hover:bg-white/20 hover:border-white/50 hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] transition-all text-white font-medium tracking-wide rounded-lg backdrop-blur-md"
+            >
+              {loading ? "Processing..." : isRegister ? "Create Account" : "Log In"}
+            </Button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setError("");
+              }}
+              className="text-xs text-white/50 hover:text-white transition-colors tracking-wide"
+            >
+              {isRegister ? "Already have an account? Sign in" : "Don't have an account? Register"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

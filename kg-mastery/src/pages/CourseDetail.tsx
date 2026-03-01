@@ -8,6 +8,7 @@ import { getAncestors } from "@/lib/graph";
 import type { GraphNode as KGNode } from "@/components/graph/KnowledgeGraph";
 import KnowledgeGraph from "@/components/graph/KnowledgeGraph";
 import NodeDrawer from "@/components/NodeDrawer";
+import BackgroundCanvas from "@/components/BackgroundCanvas";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, BrainCircuit, Upload, Loader2, X } from "lucide-react";
 
@@ -135,8 +136,10 @@ export default function CourseDetail() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#050505]">
-      {/* Floating Header - neubla style */}
-      <div className="absolute left-6 top-6 z-10 flex items-center gap-4 rounded-full border border-white/10 bg-zinc-950/60 p-2 pr-6 shadow-2xl backdrop-blur-xl">
+      <BackgroundCanvas />
+      
+      {/* Floating Header - glassmorphism */}
+      <div className="absolute left-6 top-6 z-10 flex items-center gap-4 rounded-full border border-white/20 bg-white/[0.05] p-2 pr-6 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-2xl">
         <Button
           variant="ghost"
           size="icon"
@@ -146,12 +149,12 @@ export default function CourseDetail() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex flex-col justify-center">
-          <h1 className="text-sm font-bold leading-tight tracking-tight text-white">
+          <h1 className="text-sm font-bold leading-tight tracking-wide uppercase text-white">
             {graphData?.course?.name || "Initializing..."}
           </h1>
           <div className="mt-0.5 flex items-center gap-1.5">
-            <BrainCircuit className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-xs font-medium text-emerald-400">{dynamicMastery}% Mastered</span>
+            <BrainCircuit className="h-3.5 w-3.5 text-white" />
+            <span className="text-xs font-medium tracking-wide text-white">{dynamicMastery}% Mastered</span>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -165,7 +168,7 @@ export default function CourseDetail() {
           <Button
             size="sm"
             variant="outline"
-            className="border-white/10 text-zinc-300 hover:bg-white/10 hover:text-white"
+            className="border-white/20 bg-white/5 text-white hover:bg-white/20 hover:text-white hover:border-white/50 backdrop-blur-md shadow-inner transition-all tracking-wide"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
@@ -183,24 +186,26 @@ export default function CourseDetail() {
       <div className="absolute inset-0 z-0">
         {loading ? (
           <div className="flex h-full items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-cyan-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-white" />
           </div>
         ) : !hasGraph ? (
           <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
-              <Upload className="h-8 w-8 text-zinc-500" />
+            <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/20 bg-white/[0.05] p-8 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-2xl flex flex-col items-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 shadow-inner">
+                <Upload className="h-8 w-8 text-white" />
+              </div>
+              <h2 className="mb-1 text-lg font-medium text-white tracking-wide uppercase">Upload Course Material</h2>
+              <p className="mb-6 max-w-sm text-sm text-white/70">
+                Upload a PDF to generate your knowledge graph.
+              </p>
+              <Button
+                className="bg-white/10 border border-white/20 text-white hover:bg-white/20 hover:border-white/50 backdrop-blur-md transition-all tracking-wide shadow-inner"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? "Analyzing..." : "Select PDF"}
+              </Button>
             </div>
-            <h2 className="mb-1 text-lg font-semibold text-white">Upload Course Material</h2>
-            <p className="mb-4 max-w-sm text-xs text-zinc-400">
-              Upload a PDF to generate your knowledge graph.
-            </p>
-            <Button
-              className="bg-cyan-600 text-white hover:bg-cyan-500"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? "Analyzing..." : "Select PDF"}
-            </Button>
           </div>
         ) : (
           <KnowledgeGraph
@@ -254,28 +259,28 @@ function PollModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md flex-shrink-0 rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md flex-shrink-0 rounded-2xl border border-white/20 bg-white/[0.05] p-6 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-blur-2xl">
         {loading || !poll ? (
           <div className="flex min-h-32 items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
-            <span className="ml-3 text-sm text-zinc-400">Generating question...</span>
+            <Loader2 className="h-6 w-6 animate-spin text-white" />
+            <span className="ml-3 text-sm text-white/70 tracking-wide uppercase">Generating question...</span>
           </div>
         ) : (
           <>
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <h3 className="min-w-0 flex-1 pr-4 text-sm font-bold leading-snug text-white">
+            <div className="mb-6 flex items-start justify-between gap-3">
+              <h3 className="min-w-0 flex-1 pr-4 text-sm font-medium leading-relaxed text-white tracking-wide">
                 {poll.question}
               </h3>
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-9 min-w-9 shrink-0 items-center justify-center rounded text-zinc-400 transition-colors hover:text-white"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70 transition-all hover:bg-white/20 hover:text-white"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mb-5 space-y-2">
+            <div className="mb-6 space-y-3">
               {poll.options?.map((opt: string, i: number) => {
                 const letter = opt[0];
                 const isThis = selected === letter;
@@ -287,14 +292,14 @@ function PollModal({
                     type="button"
                     onClick={() => !showResult && setSelected(letter)}
                     disabled={showResult}
-                    className={`w-full min-h-12 flex-shrink-0 rounded-lg border p-3 text-left text-xs transition-all ${
+                    className={`w-full min-h-12 flex-shrink-0 rounded-xl border p-4 text-left text-sm transition-all tracking-wide shadow-sm backdrop-blur-md ${
                       isCorrectAnswer
-                        ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-400"
+                        ? "border-white/50 bg-white/20 text-white"
                         : isWrongSelected
-                          ? "border-red-500/50 bg-red-500/10 text-red-400"
+                          ? "border-red-500/50 bg-red-500/20 text-white"
                           : isThis
-                            ? "border-cyan-500/30 bg-cyan-500/5 text-white"
-                            : "border-white/10 text-zinc-400 hover:border-white/20"
+                            ? "border-white/50 bg-white/10 text-white"
+                            : "border-white/10 bg-white/[0.03] text-white/80 hover:border-white/30 hover:bg-white/[0.08]"
                     }`}
                   >
                     {opt}
@@ -304,7 +309,7 @@ function PollModal({
             </div>
             {!showResult && (
               <Button
-                className="h-11 w-full flex-shrink-0 bg-cyan-600 text-xs font-bold text-white hover:bg-cyan-500 disabled:opacity-30"
+                className="h-12 w-full flex-shrink-0 bg-white/10 border border-white/20 text-sm font-medium tracking-widest uppercase text-white hover:bg-white/20 hover:border-white/50 hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] disabled:opacity-30 disabled:hover:bg-white/10 disabled:hover:border-white/20 backdrop-blur-md"
                 onClick={handleSubmit}
                 disabled={!selected}
               >
@@ -313,8 +318,8 @@ function PollModal({
             )}
             {showResult && (
               <div
-                className={`py-2 text-center text-sm font-semibold ${
-                  selected === poll.correct_answer ? "text-cyan-400" : "text-red-400"
+                className={`py-3 rounded-lg backdrop-blur-md text-center text-sm font-medium tracking-wide uppercase ${
+                  selected === poll.correct_answer ? "bg-white/20 text-white border border-white/30" : "bg-red-500/20 text-red-100 border border-red-500/30"
                 }`}
               >
                 {selected === poll.correct_answer

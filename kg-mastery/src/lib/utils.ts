@@ -11,7 +11,7 @@ export function getStatusFromConfidence(confidence: number) {
     if (confidence === 0) return { label: "Unseen", emoji: "⚫", color: "grey" } as const;
     if (confidence < 0.4) return { label: "Struggling", emoji: "🔴", color: "red" } as const;
     if (confidence < 0.7) return { label: "Exposed", emoji: "🟡", color: "gold" } as const;
-    return { label: "Mastered", emoji: "🟢", color: "cyan" } as const;
+    return { label: "Mastered", emoji: "🟢", color: "white" } as const;
 }
 
 /** For display in details panel: Low / Medium / High */
