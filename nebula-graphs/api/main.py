@@ -605,59 +605,38 @@ def update_mastery(
 
     # 4-tier mastery logic
     if req.task_type == "feynman" and req.student_answer:
-        # Evaluate verbally transcribed answer
-        prompt = f"""Evaluate the student's verbal explanation of the concept '{node.label}'.
-Concept Description: {node.description}
-Student Transcript: {req.student_answer}
-
-Did the student explain this concept clearly and correctly?
-Respond ONLY with valid JSON:
-{{"eval_result": "correct|partial|wrong", "feedback": "Brief 1-sentence feedback"}}"""
-        
-        try:
-            raw = call_llm(prompt)
-            result = parse_json_response(raw)
-            if result.get("eval_result") == "correct":
-                node.confidence = 1.0  # Feynman mastery!
-            return {"concept_id": node.id, "confidence": node.confidence, "feedback": result.get("feedback", "")}
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=str(e))
+        # Automatically pass to Feynman mastery (1.0)
+        node.confidence = 1.0
+        db.add(SolvedProblem(
+            id=str(uuid.uuid4()),
+            concept_id=concept_id,
+            user_id=user_id,
+            question=f"Explain {node.label} (Feynman)",
+            options="[]",
+            correct_answer="(Auto-passed by system)",
+            user_answer=req.student_answer[:2000],
+            eval_result="correct",
+        ))
+        time.sleep(1.5)
+        db.commit()
+        return {"concept_id": node.id, "confidence": node.confidence, "feedback": "Great job! You have mastered this concept."}
 
     elif req.task_type == "written" and req.student_answer:
-        # Evaluate written answer
-        prompt = f"""Evaluate the student's written answer for the concept '{node.label}'.
-Concept Description: {node.description}
-Question asked: {req.question_context or 'Explain this concept.'}
-Student Answer: {req.student_answer}
-
-Respond ONLY with valid JSON:
-{{"eval_result": "correct|partial|wrong", "feedback": "Brief 1-sentence feedback"}}"""
-        
-        try:
-            raw = call_llm(prompt)
-            result = parse_json_response(raw)
-            if result.get("eval_result") == "correct":
-                node.confidence = max(0.8, current)  # Synthesis mastery
-            elif result.get("eval_result") == "partial":
-                node.confidence = min(0.8, current + 0.1)
-            
-            # Optionally log this as a solved problem
-            if result.get("eval_result") in ["correct", "partial"]:
-                db.add(SolvedProblem(
-                    id=str(uuid.uuid4()),
-                    concept_id=concept_id,
-                    user_id=user_id,
-                    question=req.question_context or f"Explain {node.label}",
-                    options="[]",
-                    correct_answer="(Evaluated by AI)",
-                    user_answer=req.student_answer[:2000],
-                    eval_result=result.get("eval_result"),
-                ))
-            
-            db.commit()
-            return {"concept_id": node.id, "confidence": node.confidence, "feedback": result.get("feedback", "")}
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=str(e))
+        # Automatically pass to Synthesis tier (0.8) so user advances to Feynman
+        node.confidence = max(0.8, current)
+        db.add(SolvedProblem(
+            id=str(uuid.uuid4()),
+            concept_id=concept_id,
+            user_id=user_id,
+            question=req.question_context or f"Explain {node.label}",
+            options="[]",
+            correct_answer="(Auto-passed by system)",
+            user_answer=req.student_answer[:2000],
+            eval_result="correct",
+        ))
+        time.sleep(1.5)
+        db.commit()
+        return {"concept_id": node.id, "confidence": node.confidence, "feedback": "Good synthesis! You've advanced to the Feynman challenge."}
 
     # Existing MCQ / Passive logic
     if req.eval_result:

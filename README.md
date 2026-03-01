@@ -1,6 +1,6 @@
 # Nebula — Knowledge Graph Mastery
 
-**Nebula** helps you build and master a personal knowledge graph from your study sessions. Track concepts from textbooks (e.g. OpenStax) and practice (e.g. Gradescope), progress through four mastery tiers, and see everything in an interactive graph in the web app.
+**Passively track your study session to automatically build a live knowledge graph.** As you study, it silently extracts concepts and updates your mastery in real-time so you know what to review next.
 
 ---
 
@@ -10,6 +10,18 @@
 - **Passive + active mastery** — While you browse OpenStax, scrolling and reading sections increases “exposure” mastery. In the extension you can solve practice questions (Gradescope-style) and get AI-evaluated; results sync back to the graph.
 - **Four-tier progression** — Each concept moves through: **Exposure** (reading) → **Recall** (MCQ) → **Synthesis** (written explanation) → **Feynman** (voice explain). The web app shows the graph with color-coded confidence and lets you do polls, written questions, and Feynman (mic + Spline robot).
 - **Chrome extension** — Classifies the current page to a concept (by URL or AI), tracks scroll-based exposure, and lets you submit and evaluate practice answers; mastery updates sync to the same backend the web app uses.
+
+---
+
+## Technologies
+
+| Layer | Technologies |
+|-------|--------------|
+| **Backend** | Python 3.10+, [FastAPI](https://fastapi.tiangolo.com/), [Uvicorn](https://www.uvicorn.org/), [SQLAlchemy](https://www.sqlalchemy.org/) (SQLite), [PyPDF2](https://pypdf2.readthedocs.io/), [python-dotenv](https://github.com/theskumar/python-dotenv), [Pydantic](https://docs.pydantic.io/) |
+| **Web app** | [React](https://react.dev/) 18, [TypeScript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) 6, [Tailwind CSS](https://tailwindcss.com/) 4, [shadcn/ui](https://ui.shadcn.com/) (Radix), [Zustand](https://zustand-demo.pmnd.rs/), [D3.js](https://d3js.org/) (force graph), [Motion](https://motion.dev/) (animation), [Lucide React](https://lucide.dev/), [React Router](https://reactrouter.com/), [Three.js](https://threejs.org/) + [React Three Fiber](https://docs.pmnd.rs/react-three-fiber) + [Spline](https://splinetool.com/) (3D Feynman robot), [canvas-confetti](https://www.npmjs.com/package/canvas-confetti), [tsparticles](https://particles.js.org/) |
+| **Chrome extension** | Vanilla JavaScript, [Chrome Extensions API](https://developer.chrome.com/docs/extensions/) (Manifest V3, service worker, content scripts, storage), [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) (optional) |
+| **APIs & services** | [Perplexity API](https://docs.perplexity.ai/) (sonar-pro, PDF → knowledge graph extraction), [Google Gemini API](https://ai.google.dev/) (extension: solve-question evaluation) |
+| **Data** | SQLite (`nebula.db`) |
 
 ---
 

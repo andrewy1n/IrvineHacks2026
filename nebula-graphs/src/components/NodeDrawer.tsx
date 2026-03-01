@@ -96,6 +96,7 @@ export default function NodeDrawer() {
   const transcriptRef = useRef("");
   const [submittingFeynman, setSubmittingFeynman] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const feynmanSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
       setWrittenQuestion("");
@@ -131,6 +132,8 @@ export default function NodeDrawer() {
       setSubmittingWritten(false);
       setWrittenAnswer("");
       setWrittenQuestion("");
+      // After state updates, scroll to Feynman section so user sees they advanced
+      setTimeout(() => feynmanSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 150);
   };
 
   const toggleRecording = () => {
@@ -393,7 +396,7 @@ export default function NodeDrawer() {
           )}
 
           {conf >= 0.8 && (
-            <div className="space-y-4">
+            <div ref={feynmanSectionRef} className="space-y-4">
               <h4 className="text-sm font-medium uppercase tracking-widest text-white/80 flex items-center gap-2">
                 <Mic className="w-4 h-4 text-emerald-400" />
                 Feynman Voice Challenge
