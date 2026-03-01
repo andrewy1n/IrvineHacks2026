@@ -45,9 +45,17 @@ function renderConceptsList(labels) {
 }
 
 function loadStoredBackendPrefs() {
-  chrome.storage.local.get(["backendToken", "backendEmail", "activeCourseId", "kg_labels"], (data) => {
+  chrome.storage.local.get(["backendToken", "backendEmail", "activeCourseId", "kg_labels"], async (data) => {
     if (data.backendEmail) backendEmail.value = data.backendEmail;
-    courseSelect.value = data.activeCourseId || "";
+    
+    if (data.backendToken) {
+      showBackendStatus("Logged in as " + data.backendEmail + ".");
+      await loadCourses();
+      if (data.activeCourseId) {
+        courseSelect.value = data.activeCourseId;
+      }
+    }
+    
     if (data.kg_labels && data.kg_labels.length) renderConceptsList(data.kg_labels);
   });
 }

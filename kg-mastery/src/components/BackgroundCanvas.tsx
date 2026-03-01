@@ -124,7 +124,7 @@ export default function BackgroundCanvas() {
 
       {/* Global Footer */}
       <div className="absolute bottom-4 left-0 right-0 text-center text-[10px] text-white/30 tracking-widest uppercase pointer-events-none z-50">
-        Made with ❤️ at IrvineHacks
+        Made with 🤍 at IrvineHacks
       </div>
     </div>
   );

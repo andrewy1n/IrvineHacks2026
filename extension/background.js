@@ -172,6 +172,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "FETCH_SOLVED_PROBLEMS") {
+    (async () => {
+      const token = await getBackendToken();
+      const courseId = (await chrome.storage.local.get(["activeCourseId"])).activeCourseId;
+      if (!token || !courseId) return { error: "NOT_CONFIGURED" };
+      try {
+        const res = await fetch(`${API_BASE}/api/courses/${courseId}/solved`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const problems = await res.json();
+        await chrome.storage.local.set({ [SOLVE_SYNC_PROBLEMS_KEY]: problems });
+        return { problems };
+      } catch (e) {
+        return { error: e.message || "FETCH_FAILED" };
+      }
+    })().then(sendResponse);
+    return true;
+  }
+
   if (msg.type === "APPLY_MASTERY_BOOST") {
     (async () => {
       const token = await getBackendToken();

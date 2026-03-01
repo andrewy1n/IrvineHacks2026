@@ -11,6 +11,10 @@ interface NebulaState {
     selectedNode: GraphNode | null;
     drawerOpen: boolean;
 
+    // Caches
+    resourcesCache: Record<string, Resource[]>;
+    solvedProblemsCache: Record<string, SolvedProblem[]>;
+
     // Resources
     resources: Resource[];
     resourcesLoading: boolean;
@@ -22,6 +26,7 @@ interface NebulaState {
     // Poll
     poll: PollData | null;
     pollLoading: boolean;
+    pollError: string | null;
     pollModalOpen: boolean;
 
     // Actions
@@ -29,7 +34,7 @@ interface NebulaState {
     selectNode: (node: GraphNode | null) => void;
     closeDrawer: () => void;
     fetchResources: (conceptId: string) => Promise<void>;
-    fetchSolvedProblems: (conceptId: string) => Promise<void>;
+    fetchSolvedProblems: (conceptId: string, forceRefresh?: boolean) => Promise<void>;
     generatePoll: (conceptId: string) => Promise<void>;
     updateMastery: (conceptId: string, evalResult: string, problem?: { question: string; options: string[]; correct_answer: string; user_answer: string }) => Promise<void>;
     updateMasteryDelta: (conceptId: string, delta: number) => Promise<void>;
@@ -42,12 +47,15 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
     loading: false,
     selectedNode: null,
     drawerOpen: false,
+    resourcesCache: {},
+    solvedProblemsCache: {},
     resources: [],
     resourcesLoading: false,
     solvedProblems: [],
     solvedProblemsLoading: false,
     poll: null,
     pollLoading: false,
+    pollError: null,
     pollModalOpen: false,
 
     fetchGraph: async (courseId: string) => {
@@ -66,7 +74,15 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
     },
 
     selectNode: (node: GraphNode | null) => {
-        set({ selectedNode: node, drawerOpen: !!node, resources: [], solvedProblems: [], poll: null });
+        set({
+            selectedNode: node,
+            drawerOpen: !!node,
+            resources: [],
+            solvedProblems: [],
+            poll: null,
+            pollLoading: false,
+            pollError: null,
+        });
         if (node) {
             get().fetchResources(node.id);
             get().fetchSolvedProblems(node.id);
@@ -76,12 +92,22 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
     closeDrawer: () => set({ drawerOpen: false, selectedNode: null }),
 
     fetchResources: async (conceptId: string) => {
+        const cached = get().resourcesCache[conceptId];
+        if (cached) {
+            set({ resources: cached, resourcesLoading: false });
+            return;
+        }
+
         set({ resourcesLoading: true });
         try {
             const res = await apiFetch(`/api/concepts/${conceptId}/resources`);
             if (res.ok) {
                 const data = await res.json();
-                set({ resources: data, resourcesLoading: false });
+                set((state) => ({ 
+                    resources: data, 
+                    resourcesLoading: false,
+                    resourcesCache: { ...state.resourcesCache, [conceptId]: data }
+                }));
             } else {
                 set({ resourcesLoading: false });
             }
@@ -90,13 +116,25 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
         }
     },
 
-    fetchSolvedProblems: async (conceptId: string) => {
+    fetchSolvedProblems: async (conceptId: string, forceRefresh = false) => {
+        if (!forceRefresh) {
+            const cached = get().solvedProblemsCache[conceptId];
+            if (cached) {
+                set({ solvedProblems: cached, solvedProblemsLoading: false });
+                return;
+            }
+        }
+
         set({ solvedProblemsLoading: true });
         try {
             const res = await apiFetch(`/api/concepts/${conceptId}/solved`);
             if (res.ok) {
                 const data = await res.json();
-                set({ solvedProblems: data, solvedProblemsLoading: false });
+                set((state) => ({ 
+                    solvedProblems: data, 
+                    solvedProblemsLoading: false,
+                    solvedProblemsCache: { ...state.solvedProblemsCache, [conceptId]: data }
+                }));
             } else {
                 set({ solvedProblems: [], solvedProblemsLoading: false });
             }
@@ -106,17 +144,36 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
     },
 
     generatePoll: async (conceptId: string) => {
-        set({ pollLoading: true, pollModalOpen: true });
+        if (get().pollLoading) return;
+        if (get().poll) {
+            set({ pollModalOpen: true, pollLoading: false, pollError: null });
+            return;
+        }
+        set({ pollLoading: true, pollModalOpen: true, pollError: null });
         try {
             const res = await apiFetch(`/api/concepts/${conceptId}/poll`, { method: "POST" });
             if (res.ok) {
                 const data = await res.json();
-                set({ poll: data, pollLoading: false });
+                set({ poll: data, pollLoading: false, pollError: null, pollModalOpen: true });
             } else {
-                set({ pollLoading: false });
+                let message = "Failed to generate a question. Please try again.";
+                try {
+                    const err = await res.json();
+                    if (typeof err?.detail === "string" && err.detail.trim()) {
+                        message = err.detail;
+                    }
+                } catch {
+                    // keep fallback message
+                }
+                set({ poll: null, pollLoading: false, pollError: message, pollModalOpen: true });
             }
         } catch {
-            set({ pollLoading: false });
+            set({
+                poll: null,
+                pollLoading: false,
+                pollError: "Could not reach the server to generate a question.",
+                pollModalOpen: true,
+            });
         }
     },
 
@@ -142,7 +199,7 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
                         selectedNode: state.selectedNode?.id === conceptId ? updatedNode : state.selectedNode,
                     };
                 });
-                if (problem) await get().fetchSolvedProblems(conceptId);
+                if (problem) await get().fetchSolvedProblems(conceptId, true);
             }
         } catch {
             // silent fail for MVP
@@ -174,7 +231,12 @@ export const useNebulaStore = create<NebulaState>((set, get) => ({
         }
     },
 
-    setPollModalOpen: (open: boolean) => set({ pollModalOpen: open }),
+    setPollModalOpen: (open: boolean) =>
+        set(
+            open
+                ? { pollModalOpen: true }
+                : { pollModalOpen: false, poll: null, pollLoading: false, pollError: null }
+        ),
 
     setGraphData: (data: GraphData) => set({ graphData: data }),
 }));

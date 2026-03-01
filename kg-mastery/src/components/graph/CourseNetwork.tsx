@@ -11,6 +11,7 @@ interface Course {
   id: string;
   name: string;
   created_at: string;
+  masteryPercentage?: number;
 }
 
 interface SimNode extends d3.SimulationNodeDatum {
@@ -42,8 +43,7 @@ export function CourseNetwork({ courses, onDelete }: { courses: Course[]; onDele
   // Generate a random network of connections
   const networkData = useMemo(() => {
     const nodes: SimNode[] = courses.map((course) => {
-      const hash = course.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      const masteryPercentage = (hash % 80) + 10;
+      const masteryPercentage = course.masteryPercentage ?? 0;
       return {
         ...course,
         masteryPercentage,

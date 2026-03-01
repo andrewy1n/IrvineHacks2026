@@ -9,19 +9,54 @@
       max-width: 560px;
       margin: 24px auto;
       padding: 0 16px;
+      background-color: #050505;
+      color: #fafafa;
     }
-    h1 { font-size: 18px; }
-    #status { margin: 12px 0; padding: 10px; border-radius: 6px; background: #f0f9ff; border: 1px solid #bae6fd; }
-    #status.error { background: #fee2e2; border-color: #fca5a5; }
-    #status.done { background: #ccfbf1; border-color: #5eead4; }
-    #result { font-weight: 600; margin-top: 8px; }
+    h1 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+    #status { 
+      margin: 12px 0; 
+      padding: 12px; 
+      border-radius: 8px; 
+      background: rgba(255, 255, 255, 0.05); 
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 14px;
+    }
+    #status.error { 
+      background: rgba(248, 113, 113, 0.1); 
+      border-color: rgba(248, 113, 113, 0.2); 
+      color: #fca5a5;
+    }
+    #status.done { 
+      background: rgba(52, 211, 153, 0.1); 
+      border-color: rgba(52, 211, 153, 0.2); 
+      color: #6ee7b7;
+    }
+    #result { font-weight: 600; margin-top: 12px; font-size: 15px; }
+    button {
+      margin-top: 12px; 
+      padding: 10px 16px; 
+      background: #fafafa; 
+      color: #18181b; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      font-size: 13px; 
+      font-weight: 500;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+        button#downloadModel {
+          background: #fafafa;
+          color: #18181b;
+        }
   </style>
 </head>
 <body>
   <h1>Content classification (Gemini Nano)</h1>
   <div id="status">Loading…</div>
   <div id="result"></div>
-  <button id="cancelClassify" type="button" hidden style="margin-top: 12px; padding: 8px 14px;">Cancel</button>
+  <button id="downloadModel" type="button" hidden>Download AI Model (Takes a few minutes)</button>
+  <button id="cancelClassify" type="button" hidden>Cancel</button>
   <script src="classify.js"></script>
 </body>
 </html>

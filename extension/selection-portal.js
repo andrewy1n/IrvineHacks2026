@@ -144,14 +144,14 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.2);
-        background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
-        color: white;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+        background: #000000;
+        color: #fafafa;
         transition: transform 0.15s ease, box-shadow 0.15s ease;
       }
       .fab:hover {
         transform: scale(1.08);
-        box-shadow: 0 6px 20px rgba(13, 148, 136, 0.4);
+        box-shadow: 0 6px 20px rgba(255, 255, 255, 0.2);
       }
       .fab:active { transform: scale(0.98); }
       .fab svg { width: 22px; height: 22px; }
@@ -159,7 +159,7 @@
     `;
     const btn = document.createElement("button");
     btn.className = "fab";
-    btn.setAttribute("aria-label", "Solve & Sync");
+    btn.setAttribute("aria-label", "Nebula Node");
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
       <path d="M12 3v9"/>
@@ -223,23 +223,30 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 4px 14px rgba(0,0,0,0.2);
-        background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
-        color: white;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+        background: #000000;
+        color: #fafafa;
         transition: transform 0.15s ease, box-shadow 0.15s ease;
       }
       .fab:hover {
         transform: scale(1.08);
-        box-shadow: 0 6px 20px rgba(13, 148, 136, 0.4);
+        box-shadow: 0 6px 20px rgba(255, 255, 255, 0.2);
       }
       .fab:active { transform: scale(0.98); }
       .fab svg { width: 22px; height: 22px; }
     `;
     const btn = document.createElement("button");
     btn.className = "fab";
-    btn.setAttribute("aria-label", "Toggle Solve & Sync sidebar");
+    btn.setAttribute("aria-label", "Toggle Nebula Node sidebar");
     btn.type = "button";
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+    
+    try {
+      const iconUrl = chrome.runtime.getURL("icon.png");
+      btn.innerHTML = `<img src="${iconUrl}" alt="Nebula Icon" style="width:28px;height:28px;border-radius:50%;" />`;
+    } catch (e) {
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+    }
+
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -269,7 +276,13 @@
       sidebarHost.style.width = getSidebarWidthPx() + "px";
       sidebarOpen = true;
       saveSidebarOpen(true);
+      if (toggleFab && toggleFab.host) toggleFab.host.style.display = "none";
       if (sidebarShowVisibleSection && sidebarHost.refreshVisibleText) sidebarHost.refreshVisibleText();
+      
+      // Fetch latest problems from backend when opening sidebar
+      safeSendMessage({ type: "FETCH_SOLVED_PROBLEMS" }, (r) => {
+        if (r && r.problems && sidebarHost.refreshProblemsList) sidebarHost.refreshProblemsList();
+      });
     } catch (_) {}
   }
 
@@ -277,6 +290,7 @@
     if (sidebarHost) sidebarHost.style.display = "none";
     sidebarOpen = false;
     saveSidebarOpen(false);
+    if (toggleFab && toggleFab.host && studyModeEnabled) toggleFab.host.style.display = "";
   }
 
   // Sidebar: separate component (resizable panel, header + empty body). No Solve & Sync.
@@ -304,109 +318,235 @@
       }
       .sidebar-inner {
         height: 100%;
-        background: #fff;
-        box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+        background: #050505;
+        color: #fafafa;
+        box-shadow: -4px 0 24px rgba(0,0,0,0.5);
         display: flex;
         flex-direction: column;
         overflow: hidden;
         flex: 1;
         min-width: 0;
+        font-family: system-ui, sans-serif;
       }
       .sidebar-header {
         padding: 14px 16px;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         display: flex;
         align-items: center;
         justify-content: space-between;
         flex-shrink: 0;
       }
-      .sidebar-title { font-size: 14px; font-weight: 600; color: #111; margin: 0; }
+      .sidebar-title { font-size: 14px; font-weight: 600; color: #fafafa; margin: 0; }
       .close-btn {
         width: 32px; height: 32px;
         border: none; background: transparent;
         border-radius: 6px;
         cursor: pointer;
-        color: #6b7280;
+        color: #a1a1aa;
         display: flex; align-items: center; justify-content: center;
       }
-      .close-btn:hover { background: #f3f4f6; color: #111; }
+      .close-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fafafa; }
+      .spline-container {
+        width: 100%;
+        height: 180px;
+        background: #0a0a0a;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
       .sidebar-body { flex: 1; min-height: 0; overflow: auto; }
       .sidebar-toggle-row {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 10px 16px; border-bottom: 1px solid #e5e7eb;
+        padding: 10px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         flex-shrink: 0; gap: 10px;
       }
-      .sidebar-toggle-label { font-size: 12px; color: #374151; margin: 0; }
+      .sidebar-toggle-label { font-size: 13px; color: #e4e4e7; margin: 0; font-weight: 500; }
       .sidebar-toggle-switch {
         position: relative; width: 36px; height: 20px;
-        background: #ddd; border-radius: 10px; cursor: pointer; flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.15); border-radius: 10px; cursor: pointer; flex-shrink: 0;
         transition: background 0.2s;
       }
-      .sidebar-toggle-switch.on { background: #1a73e8; }
+      .sidebar-toggle-switch.on { background: #fafafa; }
       .sidebar-toggle-switch::after {
         content: ""; position: absolute; top: 2px; left: 2px;
         width: 16px; height: 16px; background: white; border-radius: 50%;
         box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: transform 0.2s;
       }
-      .sidebar-toggle-switch.on::after { transform: translateX(16px); }
+      .sidebar-toggle-switch.on::after { transform: translateX(16px); background: #18181b; }
       .sidebar-concept-mastery {
-        padding: 12px 16px; margin: 0;
-        background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
-        border-bottom: 1px solid #99f6e4;
+        padding: 14px 16px; margin: 0;
+        background: #050505;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         flex-shrink: 0;
       }
-      .sidebar-concept-mastery .concept-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f766e; margin-bottom: 4px; }
-      .sidebar-concept-mastery .concept-value { font-size: 14px; font-weight: 600; color: #134e4a; margin-bottom: 10px; }
+      .sidebar-concept-mastery .concept-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #a1a1aa; margin-bottom: 6px; }
+      .sidebar-concept-mastery .concept-value { font-size: 14px; font-weight: 600; color: #fafafa; margin-bottom: 12px; }
       .sidebar-concept-mastery .mastery-row { display: flex; align-items: center; gap: 8px; }
-      .sidebar-concept-mastery .mastery-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #0f766e; }
-      .sidebar-concept-mastery .mastery-bar-wrap { flex: 1; height: 8px; background: #ccfbf1; border-radius: 4px; overflow: hidden; }
-      .sidebar-concept-mastery .mastery-bar { height: 100%; background: #0d9488; border-radius: 4px; transition: width 0.2s; }
-      .sidebar-concept-mastery .mastery-pct { font-size: 12px; font-weight: 600; color: #134e4a; min-width: 2.5em; }
+      .sidebar-concept-mastery .mastery-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #a1a1aa; }
+      .sidebar-concept-mastery .mastery-bar-wrap { flex: 1; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; }
+      .sidebar-concept-mastery .mastery-bar { height: 100%; background: #fafafa; border-radius: 4px; transition: width 0.2s; }
+      .sidebar-concept-mastery .mastery-pct { font-size: 12px; font-weight: 600; color: #fafafa; min-width: 2.5em; }
       .visible-text-section {
-        border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1); flex-shrink: 0;
         display: flex; flex-direction: column; overflow: hidden;
       }
       .visible-text-preview {
-        max-height: 180px; overflow-y: auto; padding: 10px 16px;
-        font-size: 12px; line-height: 1.4; color: #374151;
-        background: #f9fafb; border-bottom: 1px solid #e5e7eb;
+        max-height: 180px; overflow-y: auto; padding: 12px 16px;
+        font-size: 12px; line-height: 1.5; color: #d4d4d8;
+        background: #050505; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         white-space: pre-wrap; word-break: break-word;
       }
-      .visible-text-preview.empty { color: #9ca3af; font-style: italic; }
-      .sidebar-classify-wrap { padding: 10px 16px; }
+      .visible-text-preview.empty { color: #71717a; font-style: italic; }
+      .sidebar-classify-wrap { padding: 12px 16px; background: #0a0a0a; }
       .sidebar-classify-btn {
-        width: 100%; padding: 8px 12px; font-size: 12px;
-        background: #0d9488; color: white; border: none; border-radius: 6px;
-        cursor: pointer;
+        width: 100%; padding: 10px 12px; font-size: 13px; font-weight: 500;
+        background: #fafafa; color: #18181b; border: none; border-radius: 8px;
+        cursor: pointer; transition: opacity 0.2s;
       }
-      .sidebar-classify-btn:hover { background: #0f766e; }
-      .sidebar-classify-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      .sidebar-classify-btn:hover { opacity: 0.9; }
+      .sidebar-classify-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .sidebar-refresh-kg-btn {
+        background: transparent; color: #fafafa; border: 1px solid rgba(255, 255, 255, 0.2);
+        margin-top: 8px;
+      }
+      .sidebar-refresh-kg-btn:hover { background: rgba(255, 255, 255, 0.05); opacity: 1; }
       .sidebar-classify-result {
-        padding: 10px 16px; font-size: 12px; line-height: 1.4;
-        color: #374151; background: #f0fdf4; border-top: 1px solid #bbf7d0;
-        white-space: pre-wrap; word-break: break-word; min-height: 2.5em;
+        padding: 12px 16px; font-size: 12px; line-height: 1.5;
+        color: #d4d4d8; background: rgba(255, 255, 255, 0.05); border-top: 1px solid rgba(255, 255, 255, 0.1);
+        white-space: pre-wrap; word-break: break-word; min-height: 2.5em; margin-top: 12px; border-radius: 8px;
       }
-      .sidebar-classify-result.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
-      .sidebar-classify-result.pending { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; font-style: italic; }
+      .sidebar-classify-result.error { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.2); color: #fafafa; }
+      .sidebar-classify-result.pending { background: rgba(255, 255, 255, 0.02); border-color: rgba(255, 255, 255, 0.05); color: #a1a1aa; font-style: italic; }
       .sidebar-sections-scrolled {
-        padding: 6px 16px; font-size: 12px; color: #0f766e;
-        background: #f0fdfa; border-bottom: 1px solid #99f6e4;
+        padding: 8px 16px; font-size: 12px; color: #a1a1aa;
+        background: #0a0a0a; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       }
       .sidebar-problems {
-        padding: 12px 16px; margin: 0;
-        background: #fefce8; border-bottom: 1px solid #fde047;
-        flex-shrink: 0;
+        padding: 14px 16px; margin: 0;
+        background: #0a0a0a; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
       }
-      .sidebar-problems .problems-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #854d0e; margin-bottom: 8px; font-weight: 600; }
-      .sidebar-problems .problems-list { max-height: 160px; overflow-y: auto; font-size: 12px; }
+      .sidebar-problems .problems-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #a1a1aa; margin-bottom: 10px; font-weight: 600; flex-shrink: 0; }
+      .sidebar-problems .problems-list { flex: 1; overflow-y: auto; font-size: 12px; }
       .sidebar-problems .problem-item {
-        padding: 8px 0; border-bottom: 1px solid #fef08a;
-        color: #374151; line-height: 1.35;
+        padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        color: #e4e4e7; line-height: 1.4;
       }
       .sidebar-problems .problem-item:last-child { border-bottom: none; }
-      .sidebar-problems .problem-question { color: #1f2937; margin-bottom: 4px; }
-      .sidebar-problems .problem-meta { font-size: 11px; color: #6b7280; }
-      .sidebar-problems .problems-empty { color: #9ca3af; font-style: italic; padding: 8px 0; }
+      .sidebar-problems .problem-question { color: #fafafa; margin-bottom: 6px; }
+      .sidebar-problems .problem-meta { font-size: 11px; color: #a1a1aa; }
+      .sidebar-problems .problem-item {
+        margin-bottom: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        overflow: hidden;
+        backdrop-filter: blur(10px);
+      }
+      .sidebar-problems .problem-header {
+        padding: 12px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .sidebar-problems .problem-header:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .sidebar-problems .problem-question {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 12px;
+        line-height: 1.4;
+        flex: 1;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .sidebar-problems .problem-status {
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      .sidebar-problems .status-correct { color: #34d399; }
+      .sidebar-problems .status-partial { color: #fbbf24; }
+      .sidebar-problems .status-wrong { color: #f87171; }
+      
+      .sidebar-problems .problem-content {
+        display: none;
+        padding: 0 12px 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.2);
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.9);
+        line-height: 1.5;
+      }
+      .sidebar-problems .problem-content.expanded {
+        display: block;
+      }
+      .sidebar-problems .problem-full-question {
+        padding-top: 10px;
+        margin-bottom: 8px;
+      }
+      .sidebar-problems .problem-options-title {
+        font-size: 10px;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.6);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+      }
+      .sidebar-problems .problem-options-list {
+        margin: 0;
+        padding-left: 16px;
+        color: rgba(255, 255, 255, 0.8);
+        margin-bottom: 8px;
+      }
+      .sidebar-problems .problem-answer-box {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 8px;
+        border-radius: 4px;
+        margin-top: 8px;
+        font-size: 10px;
+      }
+      .sidebar-problems .problem-answer-row {
+        margin-bottom: 4px;
+      }
+      .sidebar-problems .problem-answer-row:last-child {
+        margin-bottom: 0;
+      }
+      .sidebar-problems .problem-answer-label {
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .sidebar-problems .problem-answer-value {
+        color: rgba(255, 255, 255, 0.9);
+      }
+      .sidebar-problems .problem-correct-value {
+        color: #34d399;
+      }
+      .sidebar-problems .problem-meta {
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.4);
+        margin-top: 8px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .sidebar-problems .problems-empty { color: #71717a; font-style: italic; padding: 10px 0; }
+      
+      /* Scrollbar styles */
+      .sidebar-inner ::-webkit-scrollbar { width: 6px; }
+      .sidebar-inner ::-webkit-scrollbar-track { background: transparent; }
+      .sidebar-inner ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
     `;
 
     const rail = document.createElement("div");
@@ -422,13 +562,105 @@
 
     const header = document.createElement("div");
     header.className = "sidebar-header";
-    header.innerHTML = `<h2 class="sidebar-title">Sidebar</h2>`;
+    header.innerHTML = `<h2 class="sidebar-title">Nebula Node</h2>`;
     const closeBtn = document.createElement("button");
     closeBtn.className = "close-btn";
     closeBtn.setAttribute("aria-label", "Close");
     closeBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`;
     closeBtn.onclick = closeSidebar;
     header.appendChild(closeBtn);
+    
+    const splineContainer = document.createElement("div");
+    splineContainer.className = "spline-container";
+    
+    // Instead of <spline-viewer>, let's use an animated SVG or a clean constellation background image
+    // since some contexts block the spline WebGL viewer due to CSP or WebGL context limits.
+    const fallbackVisual = document.createElement("div");
+    fallbackVisual.style.cssText = `
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at center, #1a1a1a 0%, #050505 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    `;
+    
+    // Node visualization consistent with frontend KnowledgeGraph
+    fallbackVisual.innerHTML = `
+      <div id="visual-concept-view" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">
+        <div style="
+          position: relative;
+          width: 100px;
+          height: 100px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.05);
+          border: 2px solid rgba(255, 255, 255, 0.2);
+          box-shadow: 0 0 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
+          animation: pulseNode 4s ease-in-out infinite;
+          cursor: default;
+        ">
+          <div style="
+            position: absolute;
+            top: 8%;
+            left: 15%;
+            width: 55%;
+            height: 35%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 100%);
+            border-radius: 50%;
+            pointer-events: none;
+          "></div>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; z-index: 1;">
+              <span id="node-visual-label" style="font-size: 13px; font-weight: 600; color: #fafafa; text-align: center; line-height: 1.15; font-family: system-ui, sans-serif;">Nebula</span>
+              <div style="width: 36px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden;">
+                <div id="node-visual-bar" style="width: 0%; height: 100%; background: #ffffff; box-shadow: 0 0 10px rgba(255,255,255,0.5); transition: width 0.5s ease-out;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div id="visual-problems-view" style="display: none; align-items: center; justify-content: center; width: 100%; height: 100%;">
+          <div style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 16px 24px;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          ">
+            <span style="font-size: 15px; font-weight: 600; color: #fafafa; font-family: system-ui, sans-serif; letter-spacing: 0.05em;">Problems History</span>
+            
+            <div style="display: flex; gap: 20px; margin-top: 4px;">
+              <div style="display: flex; flex-direction: column; align-items: center;">
+                <span id="node-visual-problems-count" style="font-size: 18px; font-weight: 700; color: #ffffff;">0</span>
+                <span style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Solved</span>
+              </div>
+              <div style="width: 1px; background: rgba(255,255,255,0.1);"></div>
+              <div style="display: flex; flex-direction: column; align-items: center;">
+                <span id="node-visual-problems-avg" style="font-size: 18px; font-weight: 700; color: #ffffff;">0%</span>
+                <span style="font-size: 10px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Avg Score</span>
+              </div>
+            </div>
+          </div>
+        </div>
+  
+        <style>
+          @keyframes pulseNode {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3); }
+            50% { transform: scale(1.05); box-shadow: 0 0 24px rgba(255, 255, 255, 0.15), 0 4px 12px rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.1); }
+          }
+        </style>
+      `;
+    
+    splineContainer.appendChild(fallbackVisual);
 
     const toggleRow = document.createElement("div");
     toggleRow.className = "sidebar-toggle-row";
@@ -454,10 +686,73 @@
     conceptMasterySection.className = "sidebar-concept-mastery";
     const conceptLabel = document.createElement("div");
     conceptLabel.className = "concept-label";
-    conceptLabel.textContent = "Concept";
-    const conceptValue = document.createElement("div");
-    conceptValue.className = "concept-value";
-    conceptValue.textContent = "—";
+    conceptLabel.textContent = "View";
+    const conceptSelectWrap = document.createElement("div");
+    conceptSelectWrap.style.marginBottom = "12px";
+    const conceptSelect = document.createElement("select");
+    conceptSelect.style.cssText = "width:100%; padding:8px 10px; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#fafafa; font-size:14px; font-weight:600; outline:none; cursor:pointer;";
+    conceptSelectWrap.appendChild(conceptSelect);
+
+    function populateConceptDropdown(currentId) {
+      safeStorageGet(["kg_labels"], (data) => {
+        const labels = data.kg_labels || [];
+        conceptSelect.innerHTML = '<option value="" style="background:#1a1a1a;">— Unknown Concept —</option>';
+        labels.forEach(l => {
+          const opt = document.createElement("option");
+          opt.value = l.id;
+          opt.textContent = l.label;
+          opt.dataset.confidence = l.confidence || 0;
+          opt.style.background = "#1a1a1a";
+          conceptSelect.appendChild(opt);
+        });
+        
+        const problemsOpt = document.createElement("option");
+        problemsOpt.value = PROBLEMS_NODE_ID;
+        problemsOpt.textContent = PROBLEMS_LABEL;
+        problemsOpt.style.background = "#1a1a1a";
+        conceptSelect.appendChild(problemsOpt);
+
+        if (currentId) {
+          conceptSelect.value = currentId;
+        }
+      });
+    }
+
+    conceptSelect.addEventListener("change", (e) => {
+      const selectedId = e.target.value;
+      if (!selectedId) return;
+      
+      let payload;
+      if (selectedId === PROBLEMS_NODE_ID) {
+        payload = {
+          nodeId: PROBLEMS_NODE_ID,
+          nodeLabel: PROBLEMS_LABEL,
+          message: PROBLEMS_LABEL,
+          error: false,
+          pending: false
+        };
+        // Fetch latest problems from backend when switching to problems view
+        safeSendMessage({ type: "FETCH_SOLVED_PROBLEMS" }, (r) => {
+            if (r && r.problems) refreshProblemsList();
+        });
+      } else {
+        const selectedOpt = e.target.selectedOptions[0];
+        const selectedLabel = selectedOpt.textContent;
+        const selectedConf = parseFloat(selectedOpt.dataset.confidence) || 0;
+        
+        payload = {
+          nodeId: selectedId,
+          nodeLabel: selectedLabel,
+          confidence: selectedConf,
+          message: "Concept: " + selectedLabel + "\\nMastery: " + Math.round(selectedConf * 100) + "%",
+          error: false,
+          pending: false
+        };
+      }
+      
+      chrome.storage.local.set({ [CLASSIFY_RESULT_KEY]: payload, section_mastery_lastConceptId: selectedId === PROBLEMS_NODE_ID ? null : selectedId });
+    });
+
     const masteryRow = document.createElement("div");
     masteryRow.className = "mastery-row";
     const masteryLabel = document.createElement("span");
@@ -476,7 +771,7 @@
     masteryRow.appendChild(masteryBarWrap);
     masteryRow.appendChild(masteryPct);
     conceptMasterySection.appendChild(conceptLabel);
-    conceptMasterySection.appendChild(conceptValue);
+    conceptMasterySection.appendChild(conceptSelectWrap);
     conceptMasterySection.appendChild(masteryRow);
 
     const problemsSection = document.createElement("div");
@@ -502,21 +797,129 @@
           list.forEach((p) => {
             const item = document.createElement("div");
             item.className = "problem-item";
+            
+            const header = document.createElement("div");
+            header.className = "problem-header";
+            
             const q = document.createElement("div");
             q.className = "problem-question";
             q.textContent = (p.question || "").trim() || "(no question)";
-            if (q.textContent.length > 60) q.textContent = q.textContent.slice(0, 60) + "…";
+            
+            const status = document.createElement("div");
+            status.className = "problem-status";
+            let statusText = "UNKNOWN";
+            let statusClass = "";
+            
+            // Check eval_result first (from backend), fallback to score
+            if (p.eval_result === "correct" || p.score >= 85) {
+              statusText = "CORRECT";
+              statusClass = "status-correct";
+            } else if (p.eval_result === "partial" || p.score >= 50) {
+              statusText = "PARTIAL";
+              statusClass = "status-partial";
+            } else if (p.eval_result === "wrong" || (p.score != null && p.score < 50)) {
+              statusText = "INCORRECT";
+              statusClass = "status-wrong";
+            }
+            
+            status.textContent = statusText;
+            status.className = "problem-status " + statusClass;
+            
+            // Expandable icon
+            const expandIcon = document.createElement("div");
+            expandIcon.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><path d="M6 9l6 6 6-6"/></svg>`;
+            expandIcon.style.marginTop = "1px";
+            expandIcon.style.flexShrink = "0";
+
+            header.appendChild(q);
+            header.appendChild(status);
+            header.appendChild(expandIcon);
+            
+            const content = document.createElement("div");
+            content.className = "problem-content";
+            
+            const fullQ = document.createElement("div");
+            fullQ.className = "problem-full-question";
+            fullQ.textContent = (p.question || "").trim() || "(no question)";
+            content.appendChild(fullQ);
+            
+            if (p.options && p.options.length > 0) {
+              const optsList = document.createElement("div");
+              optsList.style.marginBottom = "8px";
+              optsList.innerHTML = `<div class="problem-options-title">Options</div>`;
+              const ul = document.createElement("ul");
+              ul.className = "problem-options-list";
+              p.options.forEach(opt => {
+                const li = document.createElement("li");
+                li.textContent = opt;
+                ul.appendChild(li);
+              });
+              optsList.appendChild(ul);
+              content.appendChild(optsList);
+            }
+            
+            const ansBox = document.createElement("div");
+            ansBox.className = "problem-answer-box";
+            
+            const userAnsRow = document.createElement("div");
+            userAnsRow.className = "problem-answer-row";
+            userAnsRow.innerHTML = `<span class="problem-answer-label">Your answer:</span> <span class="problem-answer-value">${escapeHtml(p.user_answer || p.userAnswer || "—")}</span>`;
+            
+            const correctAnsRow = document.createElement("div");
+            correctAnsRow.className = "problem-answer-row";
+            correctAnsRow.innerHTML = `<span class="problem-answer-label">Correct answer:</span> <span class="problem-correct-value">${escapeHtml(p.correct_answer || p.correctAnswer || "—")}</span>`;
+            
+            ansBox.appendChild(userAnsRow);
+            ansBox.appendChild(correctAnsRow);
+            content.appendChild(ansBox);
+            
             const meta = document.createElement("div");
             meta.className = "problem-meta";
-            const score = typeof p.score === "number" ? p.score + "%" : "—";
-            const date = p.submittedAt ? new Date(p.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-            meta.textContent = (p.mappedNode || "—") + " · " + score + (date ? " · " + date : "");
-            item.appendChild(q);
-            item.appendChild(meta);
+            const date = p.submittedAt || p.created_at ? new Date(p.submittedAt || p.created_at).toLocaleDateString() : "";
+            meta.innerHTML = `<span>${escapeHtml(p.mappedNode || "—")}</span><span>${date}</span>`;
+            content.appendChild(meta);
+            
+            let isExpanded = false;
+            header.addEventListener("click", () => {
+              isExpanded = !isExpanded;
+              content.classList.toggle("expanded", isExpanded);
+              expandIcon.querySelector("svg").style.transform = isExpanded ? "rotate(180deg)" : "rotate(0)";
+            });
+
+            item.appendChild(header);
+            item.appendChild(content);
             problemsListEl.appendChild(item);
           });
         }
+        
+        // Update stats in the visual widget if it's currently showing
+        const countEl = fallbackVisual.querySelector("#node-visual-problems-count");
+        const avgEl = fallbackVisual.querySelector("#node-visual-problems-avg");
+        if (countEl && countEl.offsetParent !== null) {
+          countEl.textContent = list.length;
+          if (avgEl) {
+            if (list.length === 0) {
+              avgEl.textContent = "0%";
+            } else {
+              const totalScore = list.reduce((sum, p) => {
+                let s = 0;
+                if (typeof p.score === "number") s = p.score;
+                else if (p.eval_result === "correct") s = 100;
+                else if (p.eval_result === "partial") s = 50;
+                return sum + s;
+              }, 0);
+              avgEl.textContent = Math.round(totalScore / list.length) + "%";
+            }
+          }
+        }
       });
+    }
+
+    // Helper for escaping HTML inside innerHTML blocks
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     const visibleTextSection = document.createElement("div");
@@ -554,10 +957,11 @@
     body.className = "sidebar-body";
 
     inner.appendChild(header);
+    inner.appendChild(splineContainer);
     inner.appendChild(conceptMasterySection);
-    inner.appendChild(problemsSection);
     inner.appendChild(toggleRow);
     inner.appendChild(visibleTextSection);
+    inner.appendChild(problemsSection);
     inner.appendChild(body);
 
     function isProblemsPage(payload) {
@@ -567,10 +971,39 @@
 
     function updateSidebarMode(payload) {
       const showProblems = isProblemsPage(payload);
+      
+      const conceptView = fallbackVisual.querySelector("#visual-concept-view");
+      const problemsView = fallbackVisual.querySelector("#visual-problems-view");
+      
+      if (showProblems) {
+        if (conceptView) conceptView.style.display = "none";
+        if (problemsView) problemsView.style.display = "flex";
+        
+        safeStorageGet([SOLVE_SYNC_PROBLEMS_KEY], (data) => {
+          const list = Array.isArray(data[SOLVE_SYNC_PROBLEMS_KEY]) ? data[SOLVE_SYNC_PROBLEMS_KEY] : [];
+          const countEl = fallbackVisual.querySelector("#node-visual-problems-count");
+          const avgEl = fallbackVisual.querySelector("#node-visual-problems-avg");
+          
+          if (countEl) countEl.textContent = list.length;
+          if (avgEl) {
+            if (list.length === 0) {
+              avgEl.textContent = "0%";
+            } else {
+              const totalScore = list.reduce((sum, p) => sum + (typeof p.score === "number" ? p.score : 0), 0);
+              avgEl.textContent = Math.round(totalScore / list.length) + "%";
+            }
+          }
+        });
+      } else {
+        if (conceptView) conceptView.style.display = "flex";
+        if (problemsView) problemsView.style.display = "none";
+      }
+
       problemsSection.style.display = showProblems ? "" : "none";
-      conceptMasterySection.style.display = showProblems ? "none" : "";
+      masteryRow.style.display = showProblems ? "none" : "";
       toggleRow.style.display = showProblems ? "none" : "";
       visibleTextSection.style.display = showProblems ? "none" : (sidebarShowVisibleSection ? "" : "none");
+      body.style.display = showProblems ? "none" : "";
     }
     updateSidebarMode(null);
 
@@ -617,13 +1050,41 @@
       });
     }
 
+    let labelsPopulated = false;
+
     function updateConceptMasteryDisplay(payload) {
-      const name = (payload && (payload.nodeLabel || (payload.message && payload.message.replace(/^Concept:\s*/i, "").split("\n")[0]))) || "—";
+      const name = (payload && (payload.nodeLabel || (payload.message && payload.message.replace(/^Concept:\s*/i, "").split("\\n")[0]))) || "—";
       const conf = payload && typeof payload.confidence === "number" ? payload.confidence : null;
-      conceptValue.textContent = name.trim() || "—";
+      
+      const nodeId = payload && payload.nodeId;
+      if (!labelsPopulated) {
+        populateConceptDropdown(nodeId);
+        labelsPopulated = true;
+      } else if (nodeId) {
+        conceptSelect.value = nodeId;
+      } else if (!nodeId && name !== "—") {
+        // Find by name if possible
+        const options = Array.from(conceptSelect.options);
+        const matchingOpt = options.find(opt => opt.textContent === name);
+        if (matchingOpt) conceptSelect.value = matchingOpt.value;
+      }
+
       const pct = conf != null ? Math.round(conf * 100) : 0;
       masteryBar.style.width = pct + "%";
       masteryPct.textContent = pct + "%";
+
+      const visualLabel = fallbackVisual.querySelector("#node-visual-label");
+      if (visualLabel) {
+        let labelText = name.trim() === "—" ? "Nebula" : name.trim();
+        if (labelText.length > 20) {
+          labelText = labelText.substring(0, 18) + "…";
+        }
+        visualLabel.textContent = labelText;
+      }
+      const visualBarWrap = fallbackVisual.querySelector("#node-visual-bar")?.parentElement;
+      if (visualBarWrap) visualBarWrap.style.display = ""; // Ensure it's visible for concept view
+      const visualBar = fallbackVisual.querySelector("#node-visual-bar");
+      if (visualBar) visualBar.style.width = pct + "%";
     }
 
     function showClassifyResult(payload) {
@@ -632,7 +1093,20 @@
         classifyResult.style.display = "none";
         return;
       }
-      if (!payload.error && !payload.pending && !isProblemsPage(payload)) updateConceptMasteryDisplay(payload);
+      
+      if (!labelsPopulated) {
+        populateConceptDropdown(payload.nodeId);
+        labelsPopulated = true;
+      } else if (payload.nodeId) {
+        conceptSelect.value = payload.nodeId;
+      }
+
+      if (!payload.error && !payload.pending) {
+        if (!isProblemsPage(payload)) {
+          updateConceptMasteryDisplay(payload);
+        }
+      }
+      
       let display = payload.message;
       if (payload.confidence !== null && payload.confidence !== undefined && !payload.error) {
         const pct = Math.round(payload.confidence * 100);
@@ -768,7 +1242,7 @@
         position: fixed;
         inset: 0;
         z-index: 2147483645;
-        background: rgba(0,0,0,0.35);
+        background: rgba(0,0,0,0.6);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -776,118 +1250,126 @@
         box-sizing: border-box;
       }
       .card {
-        background: #fff;
+        background: #0a0a0a;
+        color: #fafafa;
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
-        box-shadow: 0 24px 48px rgba(0,0,0,0.18);
+        box-shadow: 0 24px 48px rgba(0,0,0,0.5);
         max-width: 480px;
         width: 100%;
         max-height: 85vh;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        font-family: system-ui, sans-serif;
       }
       .card-header {
         padding: 14px 16px;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         display: flex;
         align-items: center;
         justify-content: space-between;
         flex-shrink: 0;
       }
-      .card-title { font-size: 14px; font-weight: 600; color: #111; margin: 0; }
+      .card-title { font-size: 14px; font-weight: 600; color: #fafafa; margin: 0; }
       .close-btn {
         width: 32px; height: 32px;
         border: none; background: transparent;
         border-radius: 6px;
         cursor: pointer;
-        color: #6b7280;
+        color: #a1a1aa;
         display: flex; align-items: center; justify-content: center;
       }
-      .close-btn:hover { background: #f3f4f6; color: #111; }
+      .close-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fafafa; }
       .prompt-section {
-        padding: 12px 16px;
+        padding: 14px 16px;
         flex-shrink: 0;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       }
-      .prompt-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+      .prompt-label { font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
       .prompt-text {
-        font-size: 13px; line-height: 1.5; color: #374151;
+        font-size: 13px; line-height: 1.5; color: #e4e4e7;
         white-space: pre-wrap; word-break: break-word;
         max-height: 120px; overflow-y: auto;
-        background: #f9fafb; padding: 10px; border-radius: 8px;
+        background: #050505; padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);
       }
       .input-section {
-        padding: 12px 16px;
+        padding: 14px 16px;
         flex: 1;
         min-height: 140px;
         display: flex; flex-direction: column;
       }
-      .input-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+      .input-label { font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
       .input-area {
         flex: 1;
         min-height: 120px;
-        padding: 10px 12px;
-        font-size: 13px; line-height: 1.5;
+        padding: 12px;
+        font-size: 13px; line-height: 1.5; color: #fafafa;
         font-family: inherit;
-        border: 1px solid #e5e7eb;
+        background: #050505;
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 8px;
         resize: vertical;
         box-sizing: border-box;
       }
       .input-area:focus {
         outline: none;
-        border-color: #0d9488;
-        box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
       }
       .card-footer {
-        padding: 12px 16px;
-        border-top: 1px solid #e5e7eb;
+        padding: 14px 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        background: #050505;
         display: flex;
         justify-content: flex-end;
-        gap: 8px;
+        gap: 10px;
         flex-shrink: 0;
       }
       .btn {
-        padding: 8px 16px;
+        padding: 10px 16px;
         border-radius: 8px;
         font-size: 13px;
         font-weight: 500;
         cursor: pointer;
         border: none;
+        transition: opacity 0.2s;
       }
-      .btn-secondary { background: #f3f4f6; color: #374151; }
-      .btn-secondary:hover { background: #e5e7eb; }
-      .btn-primary { background: #0d9488; color: white; }
-      .btn-primary:hover { background: #0f766e; }
+      .btn:hover { opacity: 0.9; }
+      .btn-secondary { background: rgba(255, 255, 255, 0.1); color: #fafafa; }
+      .btn-primary { background: #fafafa; color: #18181b; }
       .card.thinking { animation: cardGlow 1.5s ease-in-out infinite; }
       @keyframes cardGlow {
-        0%, 100% { box-shadow: 0 24px 48px rgba(0,0,0,0.18), 0 0 0 2px rgba(13, 148, 136, 0.3); }
-        50% { box-shadow: 0 24px 48px rgba(0,0,0,0.18), 0 0 24px 4px rgba(13, 148, 136, 0.5); }
+        0%, 100% { box-shadow: 0 24px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255, 255, 255, 0.1); }
+        50% { box-shadow: 0 24px 48px rgba(0,0,0,0.5), 0 0 20px 2px rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.3); }
       }
       .panel { display: none; }
       .panel.visible { display: flex; flex-direction: column; flex: 1; min-height: 0; }
       .thinking-panel {
         align-items: center; justify-content: center;
-        padding: 32px 24px;
+        padding: 40px 24px;
         gap: 16px;
       }
-      .thinking-text { font-size: 14px; color: #6b7280; display: flex; align-items: center; gap: 6px; }
-      .thinking-dot { width: 6px; height: 6px; border-radius: 50%; background: #0d9488; animation: dotPulse 1s ease-in-out infinite; }
+      .thinking-text { font-size: 14px; color: #a1a1aa; display: flex; align-items: center; gap: 6px; }
+      .thinking-dot { width: 6px; height: 6px; border-radius: 50%; background: #fafafa; animation: dotPulse 1s ease-in-out infinite; }
       .thinking-dot:nth-child(2) { animation-delay: 0.15s; }
       .thinking-dot:nth-child(3) { animation-delay: 0.3s; }
       @keyframes dotPulse { 0%, 100% { opacity: 0.3; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.2); } }
-      .input-area:disabled, .btn:disabled { opacity: 0.7; cursor: not-allowed; pointer-events: none; }
-      .results-panel { padding: 16px; gap: 14px; }
+      .input-area:disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+      .results-panel { padding: 20px 16px; gap: 16px; }
       .concept-pill {
         display: inline-block; padding: 6px 12px; border-radius: 999px;
-        background: linear-gradient(135deg, #ccfbf1 0%, #99f6e4 100%);
-        color: #0f766e; font-size: 12px; font-weight: 600; align-self: flex-start;
+        background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #fafafa; font-size: 12px; font-weight: 600; align-self: flex-start;
       }
-      .mastery-line { font-size: 15px; font-weight: 600; color: #111; }
-      .mastery-bar-wrap { height: 10px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
-      .mastery-bar { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #34d399 0%, #10b981 100%); transition: width 0.4s ease; }
-      .hint-box { padding: 10px 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; font-size: 13px; color: #92400e; line-height: 1.45; }
-      .results-done { margin-top: 8px; }
+      .mastery-line { font-size: 15px; font-weight: 600; color: #fafafa; margin-top: 4px; }
+      .mastery-bar-wrap { height: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 999px; overflow: hidden; margin: 8px 0; }
+      .mastery-bar { height: 100%; border-radius: 999px; background: #fafafa; transition: width 0.4s ease; }
+      .hint-box { padding: 12px 14px; background: rgba(253, 224, 71, 0.1); border: 1px solid rgba(253, 224, 71, 0.2); border-radius: 8px; font-size: 13px; color: #fde047; line-height: 1.5; margin-top: 4px; }
+      .results-done { margin-top: 16px; }
+      
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
     `;
 
     const backdrop = document.createElement("div");
@@ -898,7 +1380,7 @@
 
     const cardHeader = document.createElement("div");
     cardHeader.className = "card-header";
-    cardHeader.innerHTML = `<h2 class="card-title">Solve & Sync</h2>`;
+    cardHeader.innerHTML = `<h2 class="card-title">Solve Question</h2>`;
     const closeBtn = document.createElement("button");
     closeBtn.className = "close-btn";
     closeBtn.setAttribute("aria-label", "Close");
