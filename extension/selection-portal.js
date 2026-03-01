@@ -8,13 +8,28 @@
   const OPENSTAX_STORAGE_KEY = "openstax_page_data";
   const QUIZ_STORAGE_KEY = "gradescope_quiz_data";
   const CLASSIFY_PENDING_KEY = "classify_pending_text";
+  const CLASSIFY_PENDING_URL_KEY = "classify_pending_url";
   const CLASSIFY_RESULT_KEY = "classify_last_result";
+  const CLASSIFY_URL_CACHE_KEY = "classify_url_cache";
   const SECTION_MASTERY_VIEWED_KEY = "section_mastery_sectionsViewed";
   const STUDY_MODE_KEY = "study_mode";
   const SOLVE_SYNC_PROBLEMS_KEY = "solveSync_problems";
   const PROBLEMS_NODE_ID = "__problems__";
   const PROBLEMS_LABEL = "Problems";
   const SIDEBAR_WIDTH_MIN = 320;
+  const URL_TO_CONCEPT_LABEL = {
+    "https://openstax.org/books/introduction-computer-science/pages/3-2-algorithm-design-and-discovery": "Algorithm Design",
+    "https://openstax.org/books/introduction-computer-science/pages/3-practice-exercises": "Problems",
+  };
+  function normalizeUrl(url) {
+    if (!url || typeof url !== "string") return "";
+    try {
+      const u = url.trim().replace(/#.*$/, "");
+      return u.endsWith("/") && u.length > 1 ? u.slice(0, -1) : u;
+    } catch (_) {
+      return url;
+    }
+  }
   const SIDEBAR_WIDTH_MAX = 450;
   const SIDEBAR_WIDTH_DEFAULT = 380;
   const AUTO_CLASSIFY_FIRST_PARAGRAPH_MAX_CHARS = 600;
@@ -89,8 +104,9 @@
   function triggerAutoClassify(source) {
     const text = getFirstSectionText(source);
     if (!text) return;
+    const pageUrl = (source && source.url) || (typeof window !== "undefined" && window.location && window.location.href) || "";
     try {
-      chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text }, () => {
+      chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text, [CLASSIFY_PENDING_URL_KEY]: pageUrl }, () => {
         const url = chrome.runtime.getURL("classify.html?auto=1");
         safeSendMessage({ type: "OPEN_TAB", url }, () => {});
       });
@@ -1131,7 +1147,8 @@
       classifyResult.style.display = "block";
       startClassifyTimeout();
       try {
-        chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text }, () => {
+        const pageUrl = (typeof window !== "undefined" && window.location && window.location.href) || "";
+        chrome.storage.local.set({ [CLASSIFY_PENDING_KEY]: text, [CLASSIFY_PENDING_URL_KEY]: pageUrl }, () => {
           const url = chrome.runtime.getURL("classify.html");
           safeSendMessage({ type: "OPEN_TAB", url }, () => {});
         });
@@ -1361,7 +1378,12 @@
         background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
         color: #fafafa; font-size: 12px; font-weight: 600; align-self: flex-start;
       }
-      .mastery-line { font-size: 15px; font-weight: 600; color: #fafafa; margin-top: 4px; }
+      .score-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+      .score-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #a1a1aa; }
+      .score-bar-wrap { flex: 1; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; }
+      .score-bar { height: 100%; background: #fafafa; border-radius: 4px; transition: width 0.2s; }
+      .score-pct { font-size: 12px; font-weight: 600; color: #fafafa; min-width: 2.5em; }
+      .mastery-line { font-size: 13px; color: #a1a1aa; margin-top: 8px; }
       .mastery-bar-wrap { height: 10px; background: rgba(255, 255, 255, 0.1); border-radius: 999px; overflow: hidden; margin: 8px 0; }
       .mastery-bar { height: 100%; border-radius: 999px; background: #fafafa; transition: width 0.4s ease; }
       .hint-box { padding: 12px 14px; background: rgba(253, 224, 71, 0.1); border: 1px solid rgba(253, 224, 71, 0.2); border-radius: 8px; font-size: 13px; color: #fde047; line-height: 1.5; margin-top: 4px; }
@@ -1421,8 +1443,12 @@
     resultsPanel.className = "panel results-panel";
     resultsPanel.innerHTML = `
       <div class="concept-pill" id="portal-concept"></div>
+      <div class="score-row">
+        <span class="score-label">Score</span>
+        <div class="score-bar-wrap"><div class="score-bar" id="portal-score-bar" style="width:0%"></div></div>
+        <span class="score-pct" id="portal-score-pct">0%</span>
+      </div>
       <div class="mastery-line" id="portal-mastery-text"></div>
-      <div class="mastery-bar-wrap"><div class="mastery-bar" id="portal-mastery-bar" style="width:0%"></div></div>
       <div class="hint-box" id="portal-hint" hidden></div>
       <button class="btn btn-primary results-done" id="portal-results-done">Done</button>
     `;
@@ -1464,8 +1490,9 @@
         card.classList.remove("thinking");
         showPanel(resultsPanel);
         const conceptEl = resultsPanel.querySelector("#portal-concept");
+        const scoreBarEl = resultsPanel.querySelector("#portal-score-bar");
+        const scorePctEl = resultsPanel.querySelector("#portal-score-pct");
         const masteryTextEl = resultsPanel.querySelector("#portal-mastery-text");
-        const masteryBarEl = resultsPanel.querySelector("#portal-mastery-bar");
         const hintEl = resultsPanel.querySelector("#portal-hint");
         const doneBtn = resultsPanel.querySelector("#portal-results-done");
         doneBtn.onclick = closeOverlay;
@@ -1476,7 +1503,8 @@
           masteryTextEl.textContent = errMsg === "NO_API_KEY"
             ? "Set your Gemini API key: right-click extension icon → Options."
             : "Could not evaluate: " + errMsg;
-          masteryBarEl.style.width = "0%";
+          scoreBarEl.style.width = "0%";
+          scorePctEl.textContent = "0%";
           hintEl.hidden = true;
           return;
         }
@@ -1488,9 +1516,9 @@
         const backendConfidence = response.confidence != null ? Math.round(Number(response.confidence) * 100) : null;
 
         conceptEl.textContent = "Concept: " + mappedNode;
-        masteryTextEl.textContent = "Mastery increased to " + score + "%!" +
-          (synced && backendConfidence != null ? " Synced to knowledge graph (" + backendConfidence + "%)." : synced ? " Synced to knowledge graph." : "");
-        masteryBarEl.style.width = score + "%";
+        scoreBarEl.style.width = score + "%";
+        scorePctEl.textContent = score + "%";
+        masteryTextEl.textContent = (synced && backendConfidence != null ? "Synced to knowledge graph (" + backendConfidence + "%)." : synced ? "Synced to knowledge graph." : "");
         if (score < 100 && hint) {
           hintEl.textContent = hint;
           hintEl.hidden = false;
@@ -1629,11 +1657,37 @@
           var currentKey = getPageKey(newValue);
           if (currentKey === lastClassifiedPageKey) return;
           lastClassifiedPageKey = currentKey;
-          if (sidebarHost && sidebarHost.updateClassifyResult) {
-            sidebarHost.updateClassifyResult({ message: "Classifying…", pending: true });
-            startClassifyTimeout();
-          }
-          triggerAutoClassify(newValue);
+          var pageUrl = (newValue && newValue.url) || (typeof window !== "undefined" && window.location && window.location.href) || "";
+          var nUrl = normalizeUrl(pageUrl);
+          safeStorageGet(["kg_labels", CLASSIFY_URL_CACHE_KEY], function (data) {
+            var kgLabels = data.kg_labels || [];
+            var urlCache = (data[CLASSIFY_URL_CACHE_KEY] && typeof data[CLASSIFY_URL_CACHE_KEY] === "object") ? data[CLASSIFY_URL_CACHE_KEY] : {};
+            var label = URL_TO_CONCEPT_LABEL[nUrl] || (urlCache[nUrl] && urlCache[nUrl].label) || null;
+            if (label) {
+              var problemsOption = { id: PROBLEMS_NODE_ID, label: PROBLEMS_LABEL };
+              var extended = [problemsOption].concat(kgLabels);
+              var matched = extended.find(function (n) { return n.label && String(n.label).toLowerCase() === String(label).toLowerCase(); });
+              var nodeId = matched ? matched.id : (label === PROBLEMS_LABEL ? PROBLEMS_NODE_ID : null);
+              var payload = {
+                message: "Concept: " + label,
+                error: false,
+                nodeId: nodeId || null,
+                nodeLabel: label,
+                confidence: matched && typeof matched.confidence === "number" ? matched.confidence : null,
+              };
+              safeStorageSet({ [CLASSIFY_RESULT_KEY]: payload, section_mastery_lastConceptId: nodeId === PROBLEMS_NODE_ID ? null : nodeId });
+              if (sidebarHost && sidebarHost.updateClassifyResult) {
+                clearClassifyTimeout();
+                sidebarHost.updateClassifyResult(payload);
+              }
+              return;
+            }
+            if (sidebarHost && sidebarHost.updateClassifyResult) {
+              sidebarHost.updateClassifyResult({ message: "Classifying…", pending: true });
+              startClassifyTimeout();
+            }
+            triggerAutoClassify(newValue);
+          });
         }, 600);
       }
     }
@@ -1651,8 +1705,37 @@
     }
   });
 
+  function applyConceptFromUrlIfCached() {
+    var pageUrl = (typeof window !== "undefined" && window.location && window.location.href) || "";
+    var nUrl = normalizeUrl(pageUrl);
+    if (!nUrl) return;
+    safeStorageGet(["kg_labels", CLASSIFY_URL_CACHE_KEY], function (data) {
+      var kgLabels = data.kg_labels || [];
+      var urlCache = (data[CLASSIFY_URL_CACHE_KEY] && typeof data[CLASSIFY_URL_CACHE_KEY] === "object") ? data[CLASSIFY_URL_CACHE_KEY] : {};
+      var label = URL_TO_CONCEPT_LABEL[nUrl] || (urlCache[nUrl] && urlCache[nUrl].label) || null;
+      if (!label) return;
+      var problemsOption = { id: PROBLEMS_NODE_ID, label: PROBLEMS_LABEL };
+      var extended = [problemsOption].concat(kgLabels);
+      var matched = extended.find(function (n) { return n.label && String(n.label).toLowerCase() === String(label).toLowerCase(); });
+      var nodeId = matched ? matched.id : (label === PROBLEMS_LABEL ? PROBLEMS_NODE_ID : null);
+      var payload = {
+        message: "Concept: " + label,
+        error: false,
+        nodeId: nodeId || null,
+        nodeLabel: label,
+        confidence: matched && typeof matched.confidence === "number" ? matched.confidence : null,
+      };
+      safeStorageSet({ [CLASSIFY_RESULT_KEY]: payload, section_mastery_lastConceptId: nodeId === PROBLEMS_NODE_ID ? null : nodeId });
+      if (sidebarHost && sidebarHost.updateClassifyResult) {
+        clearClassifyTimeout();
+        sidebarHost.updateClassifyResult(payload);
+      }
+    });
+  }
+
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState !== "visible") return;
+    applyConceptFromUrlIfCached();
     if (!sidebarHost || !sidebarHost.updateClassifyResult) return;
     safeStorageGet([CLASSIFY_RESULT_KEY], function (data) {
       var last = data[CLASSIFY_RESULT_KEY];
