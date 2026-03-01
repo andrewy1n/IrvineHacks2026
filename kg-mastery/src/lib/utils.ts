@@ -5,13 +5,20 @@ export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export function getStatusFromConfidence(confidence: number) {
     if (confidence === 0) return { label: "Unseen", emoji: "⚫", color: "grey" } as const;
     if (confidence < 0.4) return { label: "Struggling", emoji: "🔴", color: "red" } as const;
     if (confidence < 0.7) return { label: "Exposed", emoji: "🟡", color: "gold" } as const;
     return { label: "Mastered", emoji: "🟢", color: "cyan" } as const;
+}
+
+/** For display in details panel: Low / Medium / High */
+export function getConfidenceLevel(confidence: number): "Low" | "Medium" | "High" {
+    if (confidence === 0 || confidence < 0.4) return "Low";
+    if (confidence < 0.7) return "Medium";
+    return "High";
 }
 
 export function getAuthToken(): string | null {

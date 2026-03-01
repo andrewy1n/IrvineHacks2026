@@ -267,6 +267,20 @@ def create_course(
     return {"id": course.id, "name": course.name}
 
 
+@app.delete("/api/courses/{course_id}")
+def delete_course(
+    course_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    course = db.query(Course).filter(Course.id == course_id, Course.user_id == user_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    db.delete(course)
+    db.commit()
+    return {"ok": True}
+
+
 @app.get("/api/courses/{course_id}/graph")
 def get_course_graph(
     course_id: str,
